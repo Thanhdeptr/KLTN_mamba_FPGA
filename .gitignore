@@ -1,6 +1,7 @@
 dataset_PTB-XL/
 mamba-venv/
 paper/
+ITMN/
 
 # Vivado / Xilinx generated files
 *.log
@@ -27,3 +28,21 @@ xsim.dir/
 *.ip_user_files/
 *.runs/
 *.sim/
+
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.eggs/
+
+# venv
+venv/
+mamba-venv/
+.env
+
+# Automation scripts (generated)
+*.sh
+*.tcl
