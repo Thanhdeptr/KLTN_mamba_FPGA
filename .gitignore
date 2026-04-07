@@ -46,3 +46,4 @@ mamba-venv/
 # Automation scripts (generated)
 *.sh
 *.tcl
+*.dcp
