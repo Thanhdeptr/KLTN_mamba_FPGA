@@ -1,0 +1,1 @@
+period_ns=6.667 wns_ns=-0.232 fmax_est_mhz=144.94854326714017 lut=0 ff=0 dsp=0

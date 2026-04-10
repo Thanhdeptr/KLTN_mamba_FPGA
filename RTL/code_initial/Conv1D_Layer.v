@@ -48,6 +48,7 @@ module Conv1D_Layer
     reg signed [`DATA_WIDTH-1:0] shift_reg [15:0][2:0]; 
     reg signed [`DATA_WIDTH-1:0] current_x [15:0]; 
     wire signed [`DATA_WIDTH-1:0] silu_out [15:0];
+    reg shift_en_r;
     
     // FSM
     reg [2:0] state; 
@@ -149,6 +150,7 @@ module Conv1D_Layer
             state <= S_IDLE;
             valid_out <= 0;
             ready_in <= 0;
+            shift_en_r <= 0;
             for (c = 0; c < 16; c = c + 1) begin
                 shift_reg[c][0] <= 0;
                 shift_reg[c][1] <= 0;
@@ -160,6 +162,7 @@ module Conv1D_Layer
                 state <= S_IDLE;
                 valid_out <= 0;
                 ready_in <= 1;
+                shift_en_r <= 0;
                 // Reset Shift Reg
                 for (c = 0; c < 16; c = c + 1) begin
                     shift_reg[c][0] <= 0;
@@ -188,22 +191,30 @@ module Conv1D_Layer
                                 S_MAC_0:     state <= S_MAC_1;
                                 S_MAC_1:     state <= S_MAC_2;
                                 S_MAC_2:     state <= S_MAC_3;
-                                S_MAC_3:     state <= S_WAIT_SILU;
+                                S_MAC_3: begin
+                                    shift_en_r <= 0;
+                                    state <= S_WAIT_SILU;
+                                end
                                 S_WAIT_SILU: state <= S_UPDATE;
                                 S_UPDATE: begin
                                     valid_out <= 1; 
-                                    // Update Shift Reg
-                                    for (c = 0; c < 16; c = c + 1) begin
-                                        shift_reg[c][0] <= current_x[c];
-                                        shift_reg[c][1] <= shift_reg[c][0];
-                                        shift_reg[c][2] <= shift_reg[c][1];
-                                    end
+                                    shift_en_r <= 1;
                                     state <= S_IDLE;
                                 end
                             endcase
                         end
                     end
                 endcase
+            end
+
+            // Register-enable based shift update to reduce state-decode fanout into CE paths
+            if (shift_en_r) begin
+                for (c = 0; c < 16; c = c + 1) begin
+                    shift_reg[c][0] <= current_x[c];
+                    shift_reg[c][1] <= shift_reg[c][0];
+                    shift_reg[c][2] <= shift_reg[c][1];
+                end
+                shift_en_r <= 0;
             end
         end
     end

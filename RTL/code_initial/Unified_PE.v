@@ -19,7 +19,7 @@ module Unified_PE
     localparam signed [`DATA_WIDTH-1:0] MIN_NEG = 16'sh8000; // -32768
     
     // Ket qua nhan tho (32-bit)
-    wire signed [2*`DATA_WIDTH-1:0] mult_raw;
+    (* use_dsp = "yes" *) wire signed [2*`DATA_WIDTH-1:0] mult_raw;
     
     // Ket qua nhan da dich bit (dieu chinh fixed-point)
     // Dich phai 12 bit de quay ve ti le Q3.12

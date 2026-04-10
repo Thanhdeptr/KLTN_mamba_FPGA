@@ -25,7 +25,7 @@ module Exp_Unit_PWL
     assign {slope_comb, intercept_comb} = rom[rom_addr];
     
     // Calculation
-    reg signed [31:0] prod;
+    (* use_dsp = "yes" *) reg signed [31:0] prod;
     reg signed [31:0] res;
     
     // Constants

@@ -51,11 +51,17 @@ module Scan_Core_Engine
     wire signed [`DATA_WIDTH-1:0] exp_in [15:0];
     wire signed [`DATA_WIDTH-1:0] exp_out [15:0];
     wire signed [`DATA_WIDTH-1:0] silu_out; 
+    reg  signed [`DATA_WIDTH-1:0] exp_in_reg [15:0];
     
-    // Residual + Gating
-    reg signed [31:0] Dx_prod;
+    // Residual + Gating pipeline
+    (* use_dsp = "yes" *) reg signed [31:0] Dx_prod;
     reg signed [31:0] y_with_D;
     reg signed [31:0] y_final_raw;
+    reg signed [31:0] sum_stage1_0, sum_stage1_1, sum_stage1_2, sum_stage1_3;
+    reg signed [31:0] sum_stage2_0, sum_stage2_1;
+    reg signed [31:0] sum_stage3;
+    (* use_dsp = "yes" *) wire signed [31:0] gated_raw_mul = (y_with_D * silu_out);
+    wire signed [31:0] gated_raw_comb = gated_raw_mul >>> `FRAC_BITS;
 
     // Unpack 
     genvar i;
@@ -67,7 +73,7 @@ module Scan_Core_Engine
             
             // Wiring Exp Unit
             // Exp Unit lay input tu ket qua PE tra ve (khi tinh xong Delta * A)
-            assign exp_in[i] = pe_result_vec[i*`DATA_WIDTH +: `DATA_WIDTH];
+            assign exp_in[i] = exp_in_reg[i];
             
             Exp_Unit exp_u (
                 .clk(clk),
@@ -83,17 +89,6 @@ module Scan_Core_Engine
         .out_data(silu_out)
     );
 
-    // Adder Tree (Combinational) - cong 16 ket qua tu PE (khi tinh C*h)
-    reg signed [31:0] sum_all;
-    integer k;
-    always @(*) begin
-        sum_all = 0;
-        for (k=0; k<16; k=k+1) begin
-            // PE result (h[i]*C[i])
-            sum_all = sum_all + $signed(pe_result_vec[k*`DATA_WIDTH +: `DATA_WIDTH]);
-        end
-    end
-
     // FSM
     reg [3:0] state;
     localparam S_IDLE  = 0;
@@ -103,7 +98,10 @@ module Scan_Core_Engine
     localparam S_STEP4 = 4; // Calc discA * h_old
     localparam S_STEP5 = 5; // Calc h_new = ... + ...
     localparam S_STEP6 = 6; // Calc C * h_new
-    localparam S_STEP7 = 7; // Final Output
+    localparam S_STEP7 = 7;  // Reduce stage 1
+    localparam S_STEP8 = 8;  // Reduce stage 2
+    localparam S_STEP9 = 9;  // Residual add
+    localparam S_STEP10 = 10; // Gate mul + saturate output
 
     integer j;
 
@@ -113,10 +111,21 @@ module Scan_Core_Engine
             state <= S_IDLE;
             done <= 0;
             y_out <= 0;
+            sum_stage1_0 <= 0;
+            sum_stage1_1 <= 0;
+            sum_stage1_2 <= 0;
+            sum_stage1_3 <= 0;
+            sum_stage2_0 <= 0;
+            sum_stage2_1 <= 0;
+            sum_stage3 <= 0;
+            Dx_prod <= 0;
+            y_with_D <= 0;
+            y_final_raw <= 0;
             for(j=0; j<16; j=j+1) begin
                 h_reg[j] <= 0;
                 discA_stored[j] <= 0;
                 deltaBx_stored[j] <= 0;
+                exp_in_reg[j] <= 0;
             end
         end else begin
             if (clear_h) begin
@@ -132,15 +141,21 @@ module Scan_Core_Engine
                     
                     S_STEP1: state <= S_STEP2;
                     
-                    S_STEP2: state <= S_STEP3;
+                    S_STEP2: begin
+                        // Register PE output before feeding Exp unit to shorten PE->Exp path
+                        for(j=0; j<16; j=j+1) exp_in_reg[j] <= pe_result_vec[j*16 +: 16];
+                        state <= S_STEP3;
+                    end
                     
                     S_STEP3: begin
-                        for(j=0; j<16; j=j+1) discA_stored[j] <= exp_out[j];
                         state <= S_STEP4;
                     end
                     
                     S_STEP4: begin
-                        for(j=0; j<16; j=j+1) deltaBx_stored[j] <= pe_result_vec[j*16 +: 16];
+                        for(j=0; j<16; j=j+1) begin
+                            discA_stored[j] <= exp_out[j];
+                            deltaBx_stored[j] <= pe_result_vec[j*16 +: 16];
+                        end
                         state <= S_STEP5;
                     end
                     
@@ -152,15 +167,41 @@ module Scan_Core_Engine
                     end
 
                     S_STEP7: begin
-                        
-                        Dx_prod = x_val * D_val; 
-                        y_with_D = sum_all + (Dx_prod >>> `FRAC_BITS);
-                        y_final_raw = (y_with_D * silu_out) >>> `FRAC_BITS;
-                        
-                        if (y_final_raw > 32767) y_out <= 32767;
-                        else if (y_final_raw < -32768) y_out <= -32768;
-                        else y_out <= y_final_raw[15:0];
-                        
+                        // Balanced reduction tree - stage 1 (16 -> 4 partial sums)
+                        sum_stage1_0 <= $signed(pe_result_vec[0*16 +: 16]) + $signed(pe_result_vec[1*16 +: 16]) +
+                                        $signed(pe_result_vec[2*16 +: 16]) + $signed(pe_result_vec[3*16 +: 16]);
+                        sum_stage1_1 <= $signed(pe_result_vec[4*16 +: 16]) + $signed(pe_result_vec[5*16 +: 16]) +
+                                        $signed(pe_result_vec[6*16 +: 16]) + $signed(pe_result_vec[7*16 +: 16]);
+                        sum_stage1_2 <= $signed(pe_result_vec[8*16 +: 16]) + $signed(pe_result_vec[9*16 +: 16]) +
+                                        $signed(pe_result_vec[10*16 +: 16]) + $signed(pe_result_vec[11*16 +: 16]);
+                        sum_stage1_3 <= $signed(pe_result_vec[12*16 +: 16]) + $signed(pe_result_vec[13*16 +: 16]) +
+                                        $signed(pe_result_vec[14*16 +: 16]) + $signed(pe_result_vec[15*16 +: 16]);
+                        state <= S_STEP8;
+                    end
+
+                    S_STEP8: begin
+                        // Reduction stage 2 (4 -> 2)
+                        sum_stage2_0 <= sum_stage1_0 + sum_stage1_1;
+                        sum_stage2_1 <= sum_stage1_2 + sum_stage1_3;
+                        state <= S_STEP9;
+                    end
+
+                    S_STEP9: begin
+                        // Reduction stage 3 + residual add
+                        sum_stage3 <= sum_stage2_0 + sum_stage2_1;
+                        Dx_prod <= x_val * D_val;
+                        y_with_D <= (sum_stage2_0 + sum_stage2_1) + ((x_val * D_val) >>> `FRAC_BITS);
+                        state <= S_STEP10;
+                    end
+
+                    S_STEP10: begin
+                        // Final gate and saturation
+                        y_final_raw <= gated_raw_comb;
+
+                        if (gated_raw_comb > 32767) y_out <= 32767;
+                        else if (gated_raw_comb < -32768) y_out <= -32768;
+                        else y_out <= gated_raw_comb[15:0];
+
                         done <= 1;
                         state <= S_IDLE;
                     end
@@ -209,7 +250,7 @@ module Scan_Core_Engine
             S_STEP4: begin 
                 pe_op_mode_out = `MODE_MUL;
                 for(j=0; j<16; j=j+1) begin
-                    pe_in_a_vec[j*16 +: 16] = discA_stored[j];
+                    pe_in_a_vec[j*16 +: 16] = exp_out[j];
                     pe_in_b_vec[j*16 +: 16] = h_reg[j];
                 end
             end
@@ -230,7 +271,7 @@ module Scan_Core_Engine
                 end
             end
             
-            S_STEP7: begin
+            S_STEP7, S_STEP8, S_STEP9, S_STEP10: begin
                 pe_clear_acc_out = 0;
             end
         endcase

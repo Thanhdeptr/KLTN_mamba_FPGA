@@ -53,7 +53,7 @@ module Mamba_Top
     output signed [`DATA_WIDTH-1:0] softplus_out_val
 );
 
-    // --- DAY NOI BO ---
+    // --- Internal buses ---
     wire [255:0] pe_result_common;
 
     // Linear
@@ -68,10 +68,15 @@ module Mamba_Top
     wire [1:0] conv_pe_op; wire conv_pe_clr;
     wire [255:0] conv_pe_in_a, conv_pe_in_b;
 
-    // MUX
+    // MUX (combinational select)
     reg [1:0] mux_pe_op;
     reg       mux_pe_clr;
     reg [255:0] mux_pe_in_a, mux_pe_in_b;
+
+    // Pipeline register to break long path from mode/control to PE array
+    reg [1:0] pe_op_r;
+    reg       pe_clr_r;
+    reg [255:0] pe_in_a_r, pe_in_b_r;
 
 
     Linear_Layer u_linear (
@@ -133,14 +138,29 @@ module Mamba_Top
         endcase
     end
 
+    // Register slice for PE control/data bus
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            pe_op_r   <= 0;
+            pe_clr_r  <= 1'b1;
+            pe_in_a_r <= 0;
+            pe_in_b_r <= 0;
+        end else begin
+            pe_op_r   <= mux_pe_op;
+            pe_clr_r  <= mux_pe_clr;
+            pe_in_a_r <= mux_pe_in_a;
+            pe_in_b_r <= mux_pe_in_b;
+        end
+    end
+
     // 16 PE
     genvar i;
     generate
         for (i = 0; i < 16; i = i + 1) begin : pe_array
             Unified_PE u_pe (
                 .clk(clk), .reset(reset),
-                .op_mode(mux_pe_op), .clear_acc(mux_pe_clr),
-                .in_A(mux_pe_in_a[i*16 +: 16]), .in_B(mux_pe_in_b[i*16 +: 16]),
+                .op_mode(pe_op_r), .clear_acc(pe_clr_r),
+                .in_A(pe_in_a_r[i*16 +: 16]), .in_B(pe_in_b_r[i*16 +: 16]),
                 .out_val(pe_result_common[i*16 +: 16])
             );
         end
