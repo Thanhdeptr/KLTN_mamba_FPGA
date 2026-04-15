@@ -120,3 +120,12 @@ This file records the current rough baseline (timing + hardware resource) before
 | FF | 2688 | 3396 | +26.339% |
 | DSP | 53 | 53 | 0.000% |
 | BRAM18K | 0 | 0 | 0.000% |
+
+## Level-B ITM Block (RTL)
+
+- New: `RTL/code_initial/ITM_Block.v` — Inception path (`Conv1D_Layer` k=4 + SiLU) then Mamba path (`Scan_Core_Engine`), merge `sat16(relu(incept[i]) + relu(scan_y))` with scalar `scan_y` broadcast to 16 lanes.
+- `Mamba_Top`: `mode_select == 5` muxes PE to `ITM_Block`; ports `itm_*` (feat, conv w/b, scan A/B/C/delta/x/D/gate, clear_h, start/en/done/valid_out/out_vec).
+- Synth scripts include `ITM_Block.v`: `run_ooc_quick.tcl`, `run_ooc_perf_top.tcl`, `run_ooc_perf_top_seed.tcl`.
+- RTL cosim: `RTL/code_AI_gen/test_ITM_Block` (`run.sh`: xsim `ITM_Block` + 16×`Unified_PE`, cases `zero` / `bias_lane0`; golden = Python Conv1D+SiLU PWL + merge).
+- Top-level ITM path: `RTL/code_AI_gen/test_Mamba_Top_ITM` (`run.sh`: `Mamba_Top` with `mode_select=5`, internal PE mux + register slice; same golden generator as `test_ITM_Block`). In ITM hold `itm_en` high until `itm_done`.
+- Full paper fidelity still needs: Inception 9/19/39 + pool branch, vector Mamba out (not scalar broadcast), BN/RMSNorm, optional Conv1x1 front.

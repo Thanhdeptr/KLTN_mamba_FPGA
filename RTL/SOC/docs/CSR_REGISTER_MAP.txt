@@ -1,0 +1,13 @@
+CSR map: mamba_soc_axi_lite_wrapper (AXI4-Lite, 32-bit aligned byte addresses)
+RTL source: RTL/SOC/mamba_soc_axi_lite_wrapper.v
+
+Address   Access  Register   Description
+--------  ------  ---------  -----------
+0x000     W       CTRL       bit0: write 1 with strobe -> one aclk pulse itm_start (AW+W accept).
+0x004     RW      MODE       [2:0] -> Mamba_Top.mode_select (5 = ITM). Reads as {29'b0, mode}.
+0x008     RO      STATUS     [0] itm_done sticky; [1] itm_valid sticky. Cleared on CTRL start (bit0).
+0x00C     RW      ITM_EN     [0] -> itm_en (default 1 after reset).
+
+AXI4-Lite: use s_axi_awaddr / s_axi_araddr as byte addresses (12b in ports).
+
+Wide datapaths (feat, conv w/b, scan A/B/C, scalars) are top-level ports, not CSR-mapped.

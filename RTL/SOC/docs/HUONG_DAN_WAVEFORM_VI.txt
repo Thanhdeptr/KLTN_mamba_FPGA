@@ -1,0 +1,55 @@
+================================================================================
+Waveform (.wdb) va map CSR cho slide / bao cao
+================================================================================
+
+1) Map thanh ghi (Address decoding)
+   File: RTL/SOC/docs/CSR_REGISTER_MAP.txt
+
+2) Tao file waveform tu dong
+   Chay:
+     cd RTL/SOC
+     chmod +x scripts/capture_axi_waveform.sh
+     ./scripts/capture_axi_waveform.sh
+
+   Output:
+     RTL/SOC/waveform_soc_axi.wdb
+
+3) Mo .wdb trong Vivado
+   - Mo Vivado -> Flow -> Open Static Simulation (hoac Open Waveform Database, tuy ban)
+   - Chon waveform_soc_axi.wdb
+
+   Hoac thu lenh (tuy cai dat):
+     xsim --gui waveform_soc_axi.wdb
+
+4) Thu cong (khong script)
+   Vivado project -> Run Behavioral Simulation -> Add wave AXI -> Run All -> Save .wcfg / chup man hinh.
+
+5) Loi: [Simulator 45-10] compiled without trace information
+   Nguyen nhan: xelab khong co -debug -> log_wave / .wdb se loi hoac treo.
+   Da sua: capture_axi_waveform.sh dung "xelab ... -debug typical".
+   Neu can nhieu tin hieu hon: doi thanh -debug all (compile lau hon, WDB lon hon).
+
+6) Neu log_wave bao loi path
+   Sua scripts/xsim_wave_capture.tcl: doi /tb_mamba_soc_axi_lite_wrapper/... cho dung hierarchy
+   (xem cay tin hieu trong xsim -gui).
+
+7) Canh bao [Board 49-26] ... board part ... invalid or not available
+   Day la canh bao khi Vivado quet Xilinx Board Store; KHONG lien quan mo phong RTL cua ban.
+   Co the bo qua an toan.
+
+8) Mo waveform_soc_axi.wdb ma khung song ben PHAI trong TRANG (co Scope/Objects nhung khong co xung)
+   Nguyen nhan: file .wdb da ghi du lieu (log_wave), nhung Vivado chua THEM tin hieu vao cua so Wave.
+   Cach A (GUI):
+     - Trong tab Objects: chon s_axi_awaddr, s_axi_awvalid, ... (Ctrl+click)
+     - Chuot phai -> "Add to Wave Window" (hoac keo tha vao vung song)
+     - Bam nut "Zoom Fit" / keo time axis neu can (Sim Time ~506 ns)
+   Cach B (Tcl trong Vivado, sau open_wave_database):
+     source /home/hatthanh/schoolwork/KLTN/RTL/SOC/scripts/vivado_wave_add_axi.tcl
+   Cach C: mo bang xsim GUI (doi khi tien hon cho sim thuan):
+     cd RTL/SOC
+     xsim tb_mamba_soc_axi_lite_sim -gui
+     (hoac mo .wdb tu xsim neu menu ho tro)
+
+9) Cot "Value" trong Objects trong khong
+   Gia tri thuong hien SAU khi tin hieu da duoc add vao Wave va ban chay / mo dung thoi diem;
+   hoac xem trong cua so Wave tung duong thoi gian.

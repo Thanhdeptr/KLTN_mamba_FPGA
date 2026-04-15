@@ -1,0 +1,131 @@
+AXI4-Full Register/Memory Map: mamba_soc_axi4_full_wrapper
+RTL base: RTL/code_initial/Mamba_Top.v
+Date: 2026-04-13
+
+Bus assumptions
+- AXI4-Full slave, data width = 32 bits, address = byte address.
+- Burst type supported: INCR.
+- Lane policy: Packed (1 beat = 2 lanes x 16-bit).
+- Endianness in one beat:
+  - lane_even  -> WDATA[15:0]
+  - lane_odd   -> WDATA[31:16]
+
+Safety policy
+- Start is request-based: CPU writes CTRL.start_req=1.
+- Wrapper emits 1-cycle itm_start_pulse only if:
+  - STATUS.ready_to_start = 1
+  - STATUS.busy = 0
+- While STATUS.busy = 1:
+  - writes to INPUT windows are rejected with SLVERR (lock enabled).
+- Output read coherency:
+  - itm_out_vec is snapshotted into output_shadow on itm_done pulse.
+  - CPU reads output window from output_shadow (not direct live core bus).
+
+WSTRB policy (mandatory)
+- Every write beat must apply byte-mask merge using WSTRB[3:0].
+- Only bytes with corresponding strobe bit = 1 are updated.
+- Unaligned/partial writes are legal and must not corrupt untouched bytes.
+
+Address map (byte address)
+
+CSR region: 0x0000 - 0x00FF
+
+0x0000  CTRL (WO/RW by implementation)
+  bit0  start_req      W1: request run (edge detected by wrapper)
+  bit1  clr_done       W1: clear STATUS.done_sticky
+  bit2  clr_valid      W1: clear STATUS.valid_sticky
+  bit3  clr_error      W1: clear STATUS.error_sticky and ERR_CODE
+  bit4  soft_reset_buf W1: clear input valid-mask/counters and lock state
+
+0x0004  MODE (RW)
+  [2:0] mode_select for Mamba_Top (ITM mode = 3'd5)
+
+0x0008  STATUS (RO)
+  bit0  done_sticky
+  bit1  valid_sticky
+  bit2  busy
+  bit3  ready_to_start
+  bit4  locked_inputs
+  bit5  start_reject_sticky
+  bit6  error_sticky
+  bit7  output_snapshot_valid
+  [31:8] reserved
+
+0x000C  ITM_EN (RW)
+  bit0 itm_en
+
+0x0010  ERR_CODE (RO)
+  0x00000000: no error
+  0x00000001: start rejected (not ready)
+  0x00000002: start rejected (busy)
+  0x00000003: write rejected (busy lock)
+  0x00000004: invalid address decode
+  0x00000005: burst crosses region boundary
+
+0x0014  INPUT_VALID_LO (RO)
+  Bit mask for committed beats [31:0] of global input commit map.
+
+0x0018  INPUT_VALID_HI (RO)
+  Bit mask for committed beats [63:32] of global input commit map.
+
+0x001C  INPUT_VALID_HI2 (RO)
+  Bit mask for committed beats [95:64] of global input commit map.
+  Note: current input beats = 74, so [73:0] are used.
+
+Input windows
+
+0x0100 - 0x011F  ITM_FEAT_VEC (8 beats, 32 bytes)
+  Beat i maps:
+    lane[2*i]   <= WDATA[15:0]
+    lane[2*i+1] <= WDATA[31:16]
+  Total lanes: 16 x 16-bit
+
+0x0120 - 0x019F  ITM_CONV_W_VEC (32 beats, 128 bytes)
+  Total lanes: 64 x 16-bit (16 channels x kernel4)
+
+0x01A0 - 0x01BF  ITM_CONV_B_VEC (8 beats, 32 bytes)
+  Total lanes: 16 x 16-bit
+
+0x01C0 - 0x01C7  ITM_SCAN_SCALAR (2 beats, 8 bytes)
+  0x01C0: [15:0]=scan_delta, [31:16]=scan_x
+  0x01C4: [15:0]=scan_D,     [31:16]=scan_gate
+
+0x01D0 - 0x01EF  ITM_SCAN_A_VEC (8 beats, 32 bytes)
+0x01F0 - 0x020F  ITM_SCAN_B_VEC (8 beats, 32 bytes)
+0x0210 - 0x022F  ITM_SCAN_C_VEC (8 beats, 32 bytes)
+
+0x0230 - 0x0233  ITM_SCAN_CLEAR_H (1 beat, 4 bytes)
+  bit0 used
+
+Output window (snapshot)
+
+0x0300 - 0x031F  ITM_OUT_VEC_SHADOW (8 beats, 32 bytes)
+  Read-only snapshot latched on itm_done.
+  Beat i:
+    RDATA[15:0]  = out_lane[2*i]
+    RDATA[31:16] = out_lane[2*i+1]
+
+Commit model for ready_to_start
+- Global required input beats: 74 beats.
+- Wrapper maintains per-beat valid bits for all input beats.
+- A beat is marked valid when at least one byte is written in that beat (WSTRB != 0).
+- STATUS.ready_to_start = 1 only when all required beat-valid bits are 1 and ITM_EN=1.
+- soft_reset_buf clears all beat-valid bits.
+
+Burst/region rules
+- Burst must remain within one region window. Crossing boundary => SLVERR + ERR_CODE.
+- Unmapped address => SLVERR + ERR_CODE.
+- Read from write-only field returns 0 unless otherwise specified.
+
+Software sequence (golden path)
+1) Program MODE=5, ITM_EN=1.
+2) Burst write all input windows.
+3) Poll STATUS.ready_to_start == 1.
+4) Write CTRL.start_req=1.
+5) Poll STATUS.done_sticky == 1 (or valid_sticky).
+6) Burst read ITM_OUT_VEC_SHADOW.
+7) Optional: CTRL.clr_done/clr_valid.
+
+Notes
+- Current design chooses single snapshot buffer for output coherency.
+- Double-buffer output can be added later if throughput requires overlapping run/read.

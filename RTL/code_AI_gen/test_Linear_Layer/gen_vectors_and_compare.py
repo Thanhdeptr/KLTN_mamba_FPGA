@@ -6,10 +6,20 @@ def write_zero(path: Path, n: int):
 
 
 def generate():
-    write_zero(Path("W_row.mem"), 16)
-    write_zero(Path("bias.mem"), 16)
-    Path("x_val.mem").write_text("0000\n", encoding="utf-8")
-    write_zero(Path("golden_output.mem"), 16)
+    # REAL DATA MODE: Skip generation, use extracted .mem files
+    # .mem files already created by extract_real_rtl_golden.py
+    print("✓ Using real model data (extracted from cpp_golden_files)")
+    
+    required_files = ["x_val.mem", "W_row.mem", "bias.mem", "golden_output.mem"]
+    for fname in required_files:
+        if not Path(fname).exists():
+            print(f"Warning: {fname} not found, falling back to zero test")
+            write_zero(Path("W_row.mem"), 16)
+            write_zero(Path("bias.mem"), 16)
+            Path("x_val.mem").write_text("0000\n", encoding="utf-8")
+            write_zero(Path("golden_output.mem"), 16)
+            return
+    print("✓ All real data files found")
 
 
 def read_hex(path: Path):
@@ -28,13 +38,27 @@ def compare():
     golden = read_hex(Path("golden_output.mem"))
     n = min(len(rtl), len(golden))
     mismatches = 0
+    
+    print(f"\n{'='*60}")
+    print(f"COMPARISON: Linear_Layer RTL vs Golden")
+    print(f"{'='*60}")
+    print(f"Gold outputs: {n}")
+    print(f"RTL outputs:  {len(rtl)}")
+    
     for i in range(n):
         if rtl[i] != golden[i]:
             mismatches += 1
             if mismatches <= 10:
-                print(f"idx={i} exp={golden[i]:04x} got={rtl[i]:04x}")
-    print(f"Compared: {n}")
-    print(f"Mismatches: {mismatches}")
+                rtl_signed = rtl[i] if rtl[i] < 32768 else rtl[i] - 65536
+                gold_signed = golden[i] if golden[i] < 32768 else golden[i] - 65536
+                print(f"  Mismatch[{i:2d}]: exp={golden[i]:04x}({gold_signed:6d}) got={rtl[i]:04x}({rtl_signed:6d})")
+    
+    if mismatches == 0:
+        print(f"\n✅ PASS: All {n} outputs match!")
+    else:
+        print(f"\n❌ FAIL: {mismatches}/{n} mismatches")
+        
+    print(f"{'='*60}\n")
     raise SystemExit(0 if mismatches == 0 else 1)
 
 

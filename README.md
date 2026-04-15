@@ -2,7 +2,13 @@
 
 Trích xuất weight và golden vectors từ mô hình ITMN (ECG classification) để port sang C++/FPGA.
 
-## Checkpoint (`pre-train/`)
+## Current Active Workspace Scope
+
+- Active folders: `RTL/`, `ITMN/`, `py_software/`
+- Moved out of current workspace (external/archive): `dataset_PTB-XL/`, `pre-train/`, `paper/`, `mamba-venv/`
+- Agent note: ưu tiên đọc các folder active trước, chỉ dùng dữ liệu external khi cần regenerate weight/golden.
+
+## Checkpoint (external archive)
 
 | File | exp_type | Số lớp |
 |------|----------|--------|

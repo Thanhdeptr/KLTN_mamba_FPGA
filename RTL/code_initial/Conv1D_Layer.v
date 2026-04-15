@@ -49,6 +49,7 @@ module Conv1D_Layer
     reg signed [`DATA_WIDTH-1:0] current_x [15:0]; 
     wire signed [`DATA_WIDTH-1:0] silu_out [15:0];
     reg shift_en_r;
+    reg en_r;
     
     // FSM
     reg [2:0] state; 
@@ -90,7 +91,7 @@ module Conv1D_Layer
             end
 
             default: begin
-                if (en) begin
+                if (en_r) begin
                     case(state)
                         S_LOAD_BIAS: begin
                             pe_op_mode_out = `MODE_MUL; 
@@ -151,6 +152,7 @@ module Conv1D_Layer
             valid_out <= 0;
             ready_in <= 0;
             shift_en_r <= 0;
+            en_r <= 0;
             for (c = 0; c < 16; c = c + 1) begin
                 shift_reg[c][0] <= 0;
                 shift_reg[c][1] <= 0;
@@ -158,6 +160,7 @@ module Conv1D_Layer
                 current_x[c] <= 0;
             end
         end else begin
+            en_r <= en;
             if (start) begin
                 state <= S_IDLE;
                 valid_out <= 0;
@@ -185,7 +188,7 @@ module Conv1D_Layer
                     end
                     
                     default: begin
-                        if (en) begin
+                        if (en_r) begin
                             case (state)
                                 S_LOAD_BIAS: state <= S_MAC_0;
                                 S_MAC_0:     state <= S_MAC_1;
