@@ -40,6 +40,8 @@ module tb_itm_block;
 
     integer i;
     integer fd;
+    integer fd_conv;
+    integer fd_scan;
     integer timeout_cnt;
 
     ITM_Block dut (
@@ -132,6 +134,18 @@ module tb_itm_block;
             $finish;
         end
 
+        fd_conv = $fopen("rtl_conv_branch.mem", "w");
+        if (fd_conv == 0) begin
+            $display("ERROR: cannot open rtl_conv_branch.mem");
+            $finish;
+        end
+
+        fd_scan = $fopen("rtl_scan_scalar.mem", "w");
+        if (fd_scan == 0) begin
+            $display("ERROR: cannot open rtl_scan_scalar.mem");
+            $finish;
+        end
+
         repeat (3) @(posedge clk);
         reset <= 0;
         @(posedge clk);
@@ -153,9 +167,16 @@ module tb_itm_block;
 
         #1;
         for (i = 0; i < 16; i = i + 1) begin
+            $fdisplay(fd_conv, "%04h", dut.incept_lat[i*16 +: 16]);
+        end
+        $fdisplay(fd_scan, "%04h", dut.scan_y_w);
+
+        for (i = 0; i < 16; i = i + 1) begin
             $fdisplay(fd, "%04h", itm_out_vec[i*16 +: 16]);
         end
         $fclose(fd);
+        $fclose(fd_conv);
+        $fclose(fd_scan);
         $finish;
     end
 endmodule

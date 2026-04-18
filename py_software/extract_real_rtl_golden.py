@@ -259,6 +259,52 @@ def extract_mamba_top(cpp_dir: Path, gv_dir: Path, test_dir: Path, scan_payload:
     save_mem_file(test_dir / "golden_output.mem", y_top, 16)
 
 
+def extract_new_module_vectors(cpp_dir: Path, gv_dir: Path, root_dir: Path) -> None:
+    print("\n[Full ITMN New Modules]")
+    out_root = root_dir / "RTL" / "code_AI_gen" / "test_inventory" / "full_itmn_modules"
+
+    # RMSNorm
+    rms_dir = out_root / "rmsnorm"
+    rms_in = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_input.txt"))
+    rms_out = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_after_norm.txt"))
+    rms_w = read_bin(gv_dir / "rms_norm_weight.bin")
+    save_mem_file(rms_dir / "input.mem", rms_in, 64)
+    save_mem_file(rms_dir / "weight.mem", rms_w, 64)
+    save_mem_file(rms_dir / "golden_output.mem", rms_out, 64)
+
+    # in_proj
+    in_proj_dir = out_root / "in_proj"
+    in_proj_in = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_after_norm.txt"))
+    in_proj_out = parse_tensor_txt(find_one(cpp_dir, "_X_after_linear.txt"))
+    in_proj_w1 = read_bin(gv_dir / "in_proj1_weight.bin")
+    in_proj_w2 = read_bin(gv_dir / "in_proj2_weight.bin")
+    save_mem_file(in_proj_dir / "input.mem", in_proj_in, 64)
+    save_mem_file(in_proj_dir / "weight_1.mem", in_proj_w1, int(in_proj_w1.size))
+    save_mem_file(in_proj_dir / "weight_2.mem", in_proj_w2, int(in_proj_w2.size))
+    save_mem_file(in_proj_dir / "golden_output.mem", in_proj_out, int(in_proj_out.size))
+
+    # out_proj
+    out_proj_dir = out_root / "out_proj"
+    out_proj_in = parse_tensor_txt(find_one(cpp_dir, "_Mixer_y_gated.txt"))
+    out_proj_out = parse_tensor_txt(find_one(cpp_dir, "_Mixer_final_output.txt"))
+    out_proj_w = read_bin(gv_dir / "out_proj_weight.bin")
+    save_mem_file(out_proj_dir / "input.mem", out_proj_in, 128)
+    save_mem_file(out_proj_dir / "weight.mem", out_proj_w, int(out_proj_w.size))
+    save_mem_file(out_proj_dir / "golden_output.mem", out_proj_out, 64)
+
+    # Inception block (aggregate output + per-kernel weights)
+    inc_dir = out_root / "inception_block"
+    inc_in = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_after_conv.txt"))
+    inc_out = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_inception_branch_out.txt"))
+    save_mem_file(inc_dir / "input.mem", inc_in, 64)
+    save_mem_file(inc_dir / "golden_output.mem", inc_out, 64)
+    save_mem_file(inc_dir / "bottleneck_weight.mem", read_bin(gv_dir / "inception_bottleneck_weight.bin"), int(read_bin(gv_dir / "inception_bottleneck_weight.bin").size))
+    save_mem_file(inc_dir / "conv_k1_weight.mem", read_bin(gv_dir / "inception_conv1_k1_weight.bin"), int(read_bin(gv_dir / "inception_conv1_k1_weight.bin").size))
+    save_mem_file(inc_dir / "conv_k9_weight.mem", read_bin(gv_dir / "inception_conv2_k9_weight.bin"), int(read_bin(gv_dir / "inception_conv2_k9_weight.bin").size))
+    save_mem_file(inc_dir / "conv_k19_weight.mem", read_bin(gv_dir / "inception_conv3_k19_weight.bin"), int(read_bin(gv_dir / "inception_conv3_k19_weight.bin").size))
+    save_mem_file(inc_dir / "conv_k39_weight.mem", read_bin(gv_dir / "inception_conv4_k39_weight.bin"), int(read_bin(gv_dir / "inception_conv4_k39_weight.bin").size))
+
+
 def main() -> None:
     k_root = Path(__file__).resolve().parents[1]
     cpp_dir = k_root / "ITMN" / "cpp_golden_files"
@@ -282,6 +328,7 @@ def main() -> None:
         scan_payload = extract_scan(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Scan_Core_Engine")
         extract_itm_block(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_ITM_Block", scan_payload)
         extract_mamba_top(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Mamba_Top_ITM", scan_payload)
+        extract_new_module_vectors(cpp_dir, gv_dir, k_root)
 
         print("\n" + "=" * 70)
         print("DONE: Regenerated .mem from real ITMN artifacts")

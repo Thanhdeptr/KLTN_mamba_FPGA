@@ -17,7 +17,7 @@ def silu_real(x: np.ndarray) -> np.ndarray:
     return x / (1.0 + np.exp(-x))
 
 
-def generate_pwl_coeffs(func, x_min=-4.0, x_max=4.0, n_seg=64):
+def generate_pwl_coeffs(func, x_min=-4.0, x_max=4.0, n_seg=64, fit_mode="l2"):
     """
     Fit PWL y = a*x + b per segment; return slopes_q, intercepts_q (Q3.12).
     Segment boundaries MUST match RTL: addr = in_data[15:10] (6 MSBs of 16-bit).
@@ -40,16 +40,24 @@ def generate_pwl_coeffs(func, x_min=-4.0, x_max=4.0, n_seg=64):
         xl = in_left / float(SCALE)
         xr = in_right / float(SCALE)
 
-        yl = func(np.array([xl], dtype=np.float64))[0]
-        yr = func(np.array([xr], dtype=np.float64))[0]
+        if fit_mode == "endpoint":
+            yl = func(np.array([xl], dtype=np.float64))[0]
+            yr = func(np.array([xr], dtype=np.float64))[0]
 
-        denom = xr - xl
-        if abs(denom) < 1e-12:
-            a = 0.0
-            b = yl
+            denom = xr - xl
+            if abs(denom) < 1e-12:
+                a = 0.0
+                b = yl
+            else:
+                a = (yr - yl) / denom
+                b = yl - a * xl
         else:
-            a = (yr - yl) / denom
-            b = yl - a * xl
+            # L2 linear fit over every representable Q3.12 point in this segment.
+            x_q = np.arange(in_left, in_right, dtype=np.int32)
+            x_seg = x_q.astype(np.float64) / float(SCALE)
+            y_seg = func(x_seg)
+            A = np.stack([x_seg, np.ones_like(x_seg)], axis=1)
+            a, b = np.linalg.lstsq(A, y_seg, rcond=None)[0]
 
         slopes.append(a)
         intercepts.append(b)
@@ -112,6 +120,12 @@ def main():
     parser.add_argument("--x_max", type=float, default=4.0)
     parser.add_argument("--n_seg", type=int, default=64)
     parser.add_argument(
+        "--fit_mode",
+        choices=["l2", "endpoint"],
+        default="l2",
+        help="l2: least-squares fit per segment, endpoint: line through segment endpoints",
+    )
+    parser.add_argument(
         "--coeff_out",
         type=str,
         default="RTL/code_unoptimize/silu_pwl_coeffs.mem",
@@ -131,7 +145,11 @@ def main():
 
     # 1) Generate SiLU PWL coeffs
     slopes_q, intercepts_q = generate_pwl_coeffs(
-        silu_real, x_min=args.x_min, x_max=args.x_max, n_seg=args.n_seg
+        silu_real,
+        x_min=args.x_min,
+        x_max=args.x_max,
+        n_seg=args.n_seg,
+        fit_mode=args.fit_mode,
     )
     write_mem_file(slopes_q, intercepts_q, args.coeff_out)
 

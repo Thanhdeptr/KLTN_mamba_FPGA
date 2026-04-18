@@ -39,6 +39,8 @@ module Scan_Core_Engine
 
     // Internal Registers
     reg signed [`DATA_WIDTH-1:0] h_reg [15:0];
+    reg signed [`DATA_WIDTH-1:0] h_new_temp [15:0];  // Temp for h_new before C multiply
+    reg signed [`DATA_WIDTH-1:0] deltaB_stored [15:0]; // Store Delta*B before DeltaB*x stage
     reg signed [`DATA_WIDTH-1:0] discA_stored [15:0];   
     reg signed [`DATA_WIDTH-1:0] deltaBx_stored [15:0]; 
     
@@ -56,12 +58,12 @@ module Scan_Core_Engine
     // Residual + Gating pipeline
     (* use_dsp = "yes" *) reg signed [31:0] Dx_prod;
     reg signed [31:0] y_with_D;
-    reg signed [31:0] y_final_raw;
+    reg signed [63:0] y_final_raw;
     reg signed [31:0] sum_stage1_0, sum_stage1_1, sum_stage1_2, sum_stage1_3;
     reg signed [31:0] sum_stage2_0, sum_stage2_1;
     reg signed [31:0] sum_stage3;
-    (* use_dsp = "yes" *) wire signed [31:0] gated_raw_mul = (y_with_D * silu_out);
-    wire signed [31:0] gated_raw_comb = gated_raw_mul >>> `FRAC_BITS;
+    (* use_dsp = "yes" *) wire signed [63:0] gated_raw_mul = $signed(y_with_D) * $signed(silu_out);
+    wire signed [63:0] gated_raw_comb = gated_raw_mul >>> `FRAC_BITS;
 
     // Unpack 
     genvar i;
@@ -94,10 +96,14 @@ module Scan_Core_Engine
     localparam S_IDLE  = 0;
     localparam S_STEP1 = 1; // Calc Delta * A
     localparam S_STEP2 = 2; // Calc Delta * B
+    localparam S_STEP2W = 14; // Wait for Delta*B PE output
     localparam S_STEP3 = 3; // Calc (DeltaB) * x
+    localparam S_STEP3W = 11; // Wait for Exp_Unit 2-cycle latency
     localparam S_STEP4 = 4; // Calc discA * h_old
     localparam S_STEP5 = 5; // Calc h_new = ... + ...
+    localparam S_STEP5W = 12; // Wait for PE ADD output to settle (1-cycle latency)
     localparam S_STEP6 = 6; // Calc C * h_new
+    localparam S_STEP6W = 13; // Wait for PE MUL output (C*h_new) to settle
     localparam S_STEP7 = 7;  // Reduce stage 1
     localparam S_STEP8 = 8;  // Reduce stage 2
     localparam S_STEP9 = 9;  // Residual add
@@ -123,6 +129,8 @@ module Scan_Core_Engine
             y_final_raw <= 0;
             for(j=0; j<16; j=j+1) begin
                 h_reg[j] <= 0;
+                h_new_temp[j] <= 0;
+                deltaB_stored[j] <= 0;
                 discA_stored[j] <= 0;
                 deltaBx_stored[j] <= 0;
                 exp_in_reg[j] <= 0;
@@ -143,11 +151,30 @@ module Scan_Core_Engine
                     
                     S_STEP2: begin
                         // Register PE output before feeding Exp unit to shorten PE->Exp path
-                        for(j=0; j<16; j=j+1) exp_in_reg[j] <= pe_result_vec[j*16 +: 16];
+                        for(j=0; j<16; j=j+1) begin
+                            exp_in_reg[j] <= pe_result_vec[j*16 +: 16];
+                        end
+                        state <= S_STEP2W;
+                    end
+
+                    S_STEP2W: begin
+                        // Capture Delta*B exactly when PE output from S_STEP2 is available
+                        for(j=0; j<16; j=j+1) begin
+                            deltaB_stored[j] <= pe_result_vec[j*16 +: 16];
+                        end
                         state <= S_STEP3;
                     end
                     
                     S_STEP3: begin
+                        // DeltaB is already captured in S_STEP2W; keep this cycle for DeltaB*x setup
+                        state <= S_STEP3W;  // Wait for Exp_Unit 2-cycle latency
+                    end
+                    
+                    S_STEP3W: begin
+                        // Wait for Exp_Unit pipeline (2 cycles total: in_data_r + PWL calc)
+                        // exp_in_reg loaded in S_STEP2
+                        // Cycle 1: Exp_Unit.in_data_r loads (at S_STEP3→S_STEP3W edge)
+                        // Cycle 2: Exp_Unit_PWL calculates, result written to out_data
                         state <= S_STEP4;
                     end
                     
@@ -159,10 +186,30 @@ module Scan_Core_Engine
                         state <= S_STEP5;
                     end
                     
-                    S_STEP5: state <= S_STEP6;
+                    S_STEP5: begin
+                        // PE is doing ADD: h_new = (discA*h_old) + deltaBx
+                        // Unified_PE has registered output, so wait one cycle in S_STEP5W
+                        state <= S_STEP5W;
+                    end
+
+                    S_STEP5W: begin
+                        // Now PE ADD output is stable on pe_result_vec
+                        for(j=0; j<16; j=j+1) begin
+                            h_new_temp[j] <= pe_result_vec[j*16 +: 16];
+                        end
+                        state <= S_STEP6;
+                    end
                     
                     S_STEP6: begin
-                        for(j=0; j<16; j=j+1) h_reg[j] <= pe_result_vec[j*16 +: 16];
+                        // Update hidden state: h_reg stores h_new for next iteration
+                        for(j=0; j<16; j=j+1) begin
+                            h_reg[j] <= h_new_temp[j];  // FIX: Use h_new_temp, not pe_result_vec!
+                        end
+                        // PE output is registered; wait one cycle before reduction reads pe_result_vec
+                        state <= S_STEP6W;
+                    end
+
+                    S_STEP6W: begin
                         state <= S_STEP7;
                     end
 
@@ -188,20 +235,19 @@ module Scan_Core_Engine
 
                     S_STEP9: begin
                         // Reduction stage 3 + residual add
-                        sum_stage3 <= sum_stage2_0 + sum_stage2_1;
-                        Dx_prod <= x_val * D_val;
-                        y_with_D <= (sum_stage2_0 + sum_stage2_1) + ((x_val * D_val) >>> `FRAC_BITS);
+                        sum_stage3 <= $signed(sum_stage2_0) + $signed(sum_stage2_1);
+                        Dx_prod <= $signed(x_val) * $signed(D_val);
+                        y_with_D <= ($signed(sum_stage2_0) + $signed(sum_stage2_1)) +
+                                    (($signed(x_val) * $signed(D_val)) >>> `FRAC_BITS);
                         state <= S_STEP10;
                     end
 
                     S_STEP10: begin
                         // Final gate and saturation
                         y_final_raw <= gated_raw_comb;
-
                         if (gated_raw_comb > 32767) y_out <= 32767;
                         else if (gated_raw_comb < -32768) y_out <= -32768;
                         else y_out <= gated_raw_comb[15:0];
-
                         done <= 1;
                         state <= S_IDLE;
                     end
@@ -231,7 +277,7 @@ module Scan_Core_Engine
                 end
             end
 
-            S_STEP2: begin 
+            S_STEP2, S_STEP2W: begin 
                 pe_op_mode_out = `MODE_MUL;
                 for(j=0; j<16; j=j+1) begin
                     pe_in_a_vec[j*16 +: 16] = delta_val;
@@ -239,10 +285,10 @@ module Scan_Core_Engine
                 end
             end
 
-            S_STEP3: begin 
+            S_STEP3, S_STEP3W: begin
                 pe_op_mode_out = `MODE_MUL;
                 for(j=0; j<16; j=j+1) begin
-                    pe_in_a_vec[j*16 +: 16] = pe_result_vec[j*16 +: 16]; 
+                    pe_in_a_vec[j*16 +: 16] = deltaB_stored[j];
                     pe_in_b_vec[j*16 +: 16] = x_val;
                 end
             end
@@ -255,7 +301,9 @@ module Scan_Core_Engine
                 end
             end
 
-            S_STEP5: begin 
+            S_STEP5, S_STEP5W: begin 
+                // S_STEP5: Setup ADD (discA*h_old) + deltaBx
+                // S_STEP5W: Wait for PE output (PE execution continues)
                 pe_op_mode_out = `MODE_ADD;
                 for(j=0; j<16; j=j+1) begin
                     pe_in_a_vec[j*16 +: 16] = pe_result_vec[j*16 +: 16];
@@ -263,10 +311,10 @@ module Scan_Core_Engine
                 end
             end
 
-            S_STEP6: begin 
+            S_STEP6, S_STEP6W: begin 
                 pe_op_mode_out = `MODE_MUL;
                 for(j=0; j<16; j=j+1) begin
-                    pe_in_a_vec[j*16 +: 16] = pe_result_vec[j*16 +: 16];
+                    pe_in_a_vec[j*16 +: 16] = h_new_temp[j];  // Use captured h_new for C multiply
                     pe_in_b_vec[j*16 +: 16] = C_in[j];
                 end
             end

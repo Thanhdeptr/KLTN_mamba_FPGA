@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"my-mcp-server-bf976630": {
+			"url": "https://mcp.mermaid.ai/mcp",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}

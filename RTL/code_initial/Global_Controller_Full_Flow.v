@@ -951,7 +951,7 @@ module Global_Controller_Full_Flow
                     
                     // H?t token cho k�nh n�y -> Sang k�nh kh�c
                     if (scan_ch_cnt == 127) begin
-                        state <= S_DONE; // XONG TO�N B? (Phase 4 Done)
+                        state <= S_PHASE5_SETUP; // Phase 4 done -> continue full flow to Phase 5
                     end else begin
                         scan_ch_cnt <= scan_ch_cnt + 1;
                         state <= S_SCAN_LOAD_STATIC; // Load A, D cho k�nh m?i
@@ -985,14 +985,16 @@ module Global_Controller_Full_Flow
                 lin_start <= 1;
                 
                 feed_x_idx <= 0;
-                x_cache_idx <= 0;
+                // Scan is stored channel-first, 16 tokens packed per word.
+                // Select current token inside each packed 256-bit word.
+                x_cache_idx <= token_cnt[3:0];
                 
                 // 1. INPUT X (SCAN OUT):
-                // Scan Out l�u Channel-First (Group-First).
-                // Token hi?n t?i n?m r?i r�c ?: Base + (Group*1000) + Token
-                // B?t �?u t? Group 0
-                stride_addr <= ADDR_SCAN_Y_BASE + token_cnt; 
-                core_read_addr <= ADDR_SCAN_Y_BASE + token_cnt;
+                // Scan write layout:
+                //   addr = ADDR_SCAN_Y_BASE + (channel * 63) + (token / 16)
+                // Start from channel 0 for current token block.
+                stride_addr <= ADDR_SCAN_Y_BASE + token_cnt[15:4]; 
+                core_read_addr <= ADDR_SCAN_Y_BASE + token_cnt[15:4];
                 
                 // 2. WEIGHT:
                 // W_out shape (64, 128). Chia l�m 4 chunks output.
@@ -1019,43 +1021,29 @@ module Global_Controller_Full_Flow
                 if (lin_en == 0) begin 
                     x_cache <= core_read_data; 
                     lin_en <= 1;
-                    
-                    // Logic Stride Read (Gi?ng Phase 3.1)
-                    // Nh?y �?n Group ti?p theo: +1000
-                    stride_addr <= stride_addr + 1000;
-                    core_read_addr <= stride_addr + 1000; 
-                    
-                    // FIX: KH�NG t�ng �?a ch? weight ? ��y.
-                    // W[0] �? ��?c load t? SETUP/WAIT, c?n gi? nguy�n cho nh?p �?u ti�n (x[0]).
-                    weight_read_addr <= weight_read_addr + 1; // <-- X�A D?NG N�Y
+
+                    // Next channel (same token block): +63 words per channel.
+                    // We precompute next read address while feeding current one.
+                    stride_addr <= stride_addr + 63;
+                    core_read_addr <= stride_addr + 63;
+
+                    // Prepare next weight line.
+                    weight_read_addr <= weight_read_addr + 1;
                 end
                 
                 // 2. FEED LINEAR (Khi EN = 1)
                 else begin 
-                    x_cache_idx <= x_cache_idx + 1;
                     feed_x_idx <= feed_x_idx + 1;
                     
-                    if (feed_x_idx == 127) begin // �? 128 ph?n t?
+                    if (feed_x_idx == 127) begin // X?y 128 ph?n t?
                         lin_en <= 0; 
                         state <= S_OUTPROJ_WAIT_L;
                         feed_x_idx <= 0; 
-                        x_cache_idx <= 0;
-                    end 
-                    else if (x_cache_idx == 15) begin // H?t 16 s? trong Cache -> Reload
-                        lin_en <= 0; 
-                        x_cache_idx <= 0;
-                        state <= S_OUTPROJ_READ; // Quay l?i �?c Group ti?p theo
-                        
-                        // FIX: Khi quay l?i READ, �?a ch? Weight c?n t�ng l�n 1 (cho x ti?p theo)
-                        // L�c n�y feed_x_idx �ang l� 15, 31...
-                        // Next weight addr = Base + feed_x_idx + 1
                     end 
                     else begin
-                        // FIX: Logic Pipeline
-                        // T?i nh?p i (�ang t�nh x[i]*W[i]), ta c?n request W[i+1] cho nh?p sau.
-                        // feed_x_idx hi?n t?i l� i.
-                        // Addr = Base + i + 1.
-                        weight_read_addr <= base_weight_addr + feed_x_idx + 2;
+                        // Reload next channel word.
+                        lin_en <= 0;
+                        state <= S_OUTPROJ_READ; // Quay l?i �?c Group ti?p theo
                     end
                 end
             end
