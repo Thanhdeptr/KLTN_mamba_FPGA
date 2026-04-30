@@ -50,6 +50,10 @@ module Conv1D_Layer
     wire signed [`DATA_WIDTH-1:0] silu_out [15:0];
     reg shift_en_r;
     reg en_r;
+    // Instrumentation
+    reg prev_start_r;
+    reg prev_valid_out_r;
+    reg prev_ready_in_r;
     
     // FSM
     reg [2:0] state; 
@@ -219,6 +223,24 @@ module Conv1D_Layer
                 end
                 shift_en_r <= 0;
             end
+        end
+    end
+
+    // Debug instrumentation: print starts/valid/ready edges
+    always @(posedge clk) begin
+        if (reset) begin
+            prev_start_r <= 1'b0;
+            prev_valid_out_r <= 1'b0;
+            prev_ready_in_r <= 1'b0;
+        end else begin
+            if (!prev_start_r && start) $display("CONV: start asserted time=%0t", $time);
+            if (!prev_valid_out_r && valid_out) $display("CONV: valid_out asserted time=%0t", $time);
+            if (prev_valid_out_r && !valid_out) $display("CONV: valid_out deasserted time=%0t", $time);
+            if (!prev_ready_in_r && ready_in) $display("CONV: ready_in asserted time=%0t", $time);
+
+            prev_start_r <= start;
+            prev_valid_out_r <= valid_out;
+            prev_ready_in_r <= ready_in;
         end
     end
 

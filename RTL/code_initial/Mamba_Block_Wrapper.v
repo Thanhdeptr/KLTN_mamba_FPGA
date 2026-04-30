@@ -223,4 +223,55 @@ module Mamba_Block_Wrapper #(
         .y_vec(final_out_packed)
     );
 
+    // Instrumentation: detect start pulses and done/valid assertions for debugging
+    reg prev_rms_start, prev_inproj_start, prev_conv_start, prev_scan_start, prev_outproj_start;
+    reg prev_rms_done, prev_inproj_done, prev_all_conv_valid, prev_all_scan_done, prev_outproj_done;
+    reg prev_scan_clear;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            prev_rms_start <= 1'b0;
+            prev_inproj_start <= 1'b0;
+            prev_conv_start <= 1'b0;
+            prev_scan_start <= 1'b0;
+            prev_outproj_start <= 1'b0;
+
+            prev_rms_done <= 1'b0;
+            prev_inproj_done <= 1'b0;
+            prev_all_conv_valid <= 1'b0;
+            prev_all_scan_done <= 1'b0;
+            prev_outproj_done <= 1'b0;
+        end else begin
+            // start edges
+            if (!prev_rms_start && rms_start) $display("WRAPPER: rms_start asserted time=%0t", $time);
+            if (!prev_inproj_start && inproj_start) $display("WRAPPER: inproj_start asserted time=%0t", $time);
+            if (!prev_conv_start && conv_start) $display("WRAPPER: conv_start asserted time=%0t", $time);
+            if (!prev_scan_start && scan_start) $display("WRAPPER: scan_start asserted time=%0t", $time);
+            if (!prev_outproj_start && outproj_start) $display("WRAPPER: outproj_start asserted time=%0t", $time);
+
+            // scan_clear edge
+            if (!prev_scan_clear && scan_clear_h) $display("WRAPPER: scan_clear_h asserted time=%0t", $time);
+
+            // done/valid edges
+            if (!prev_rms_done && rms_done) $display("WRAPPER: rms_done time=%0t", $time);
+            if (!prev_inproj_done && inproj_done) $display("WRAPPER: inproj_done time=%0t", $time);
+            if (!prev_all_conv_valid && all_conv_valid) $display("WRAPPER: all_conv_valid time=%0t", $time);
+            if (!prev_all_scan_done && all_scan_done) $display("WRAPPER: all_scan_done time=%0t", $time);
+            if (!prev_outproj_done && outproj_done) $display("WRAPPER: outproj_done time=%0t", $time);
+
+            prev_rms_start <= rms_start;
+            prev_inproj_start <= inproj_start;
+            prev_conv_start <= conv_start;
+            prev_scan_start <= scan_start;
+            prev_outproj_start <= outproj_start;
+
+            prev_scan_clear <= scan_clear_h;
+
+            prev_rms_done <= rms_done;
+            prev_inproj_done <= inproj_done;
+            prev_all_conv_valid <= all_conv_valid;
+            prev_all_scan_done <= all_scan_done;
+            prev_outproj_done <= outproj_done;
+        end
+    end
 endmodule

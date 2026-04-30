@@ -110,6 +110,10 @@ module Scan_Core_Engine
     localparam S_STEP10 = 10; // Gate mul + saturate output
 
     integer j;
+    // Instrumentation
+    reg [3:0] prev_state;
+    reg prev_start_r;
+    reg prev_done_r;
 
     // SEQUENTIAL LOGIC
     always @(posedge clk or posedge reset) begin
@@ -258,6 +262,23 @@ module Scan_Core_Engine
             
             
             if (done && !start) done <= 0; 
+        end
+    end
+
+    // Debug instrumentation: state transitions and start/done edges
+    always @(posedge clk) begin
+        if (reset) begin
+            prev_state <= S_IDLE;
+            prev_start_r <= 1'b0;
+            prev_done_r <= 1'b0;
+        end else begin
+            if (state != prev_state) $display("SCAN: state %0d -> %0d time=%0t", prev_state, state, $time);
+            if (!prev_start_r && start) $display("SCAN: start asserted time=%0t", $time);
+            if (!prev_done_r && done) $display("SCAN: done asserted time=%0t", $time);
+
+            prev_state <= state;
+            prev_start_r <= start;
+            prev_done_r <= done;
         end
     end
 

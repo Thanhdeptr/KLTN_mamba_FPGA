@@ -91,4 +91,20 @@ module Out_Projection_Unit
         end
     end
 
+    // Debug instrumentation: show start/done edges
+    reg prev_start_r;
+    reg prev_done_r;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            prev_start_r <= 1'b0;
+            prev_done_r <= 1'b0;
+        end else begin
+            if (!prev_start_r && start) $display("OUTPROJ: start asserted time=%0t", $time);
+            if (!prev_done_r && done) $display("OUTPROJ: done asserted time=%0t", $time);
+            prev_start_r <= start;
+            prev_done_r <= done;
+        end
+    end
+
 endmodule

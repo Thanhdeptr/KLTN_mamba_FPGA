@@ -63,6 +63,7 @@ module FastRsqrt_NR (
                         seed_addr = (x_in <= 32'sd0) ? 6'd0 : x_in[15:10];
                         y_reg <= rsqrt_rom[seed_addr];
                         state <= 2'd1;
+                        $display("FastRsqrt_NR: start observed time=%0t", $time);
                     end
                 end
 
@@ -92,6 +93,7 @@ module FastRsqrt_NR (
                     y_next_q312 <= ($signed(y_reg) * $signed(ONE_POINT_FIVE_Q312 - ((mul64_b >>> `FRAC_BITS) >>> 1))) >>> `FRAC_BITS;
                     y_out <= sat16(($signed(y_reg) * $signed(ONE_POINT_FIVE_Q312 - ((mul64_b >>> `FRAC_BITS) >>> 1))) >>> `FRAC_BITS);
                     valid <= 1'b1;
+                    $display("FastRsqrt_NR: valid asserted time=%0t", $time);
                     state <= 2'd0;
                 end
 
@@ -178,6 +180,7 @@ module RMSNorm_Unit_IntSqrt
                     nr_kicked <= 1'b0;
                     if (start && en) begin
                         state <= ST_SUM;
+                        $display("RMSNorm: start/en observed time=%0t", $time);
                     end
                 end
 
@@ -202,11 +205,13 @@ module RMSNorm_Unit_IntSqrt
                     if (!nr_kicked) begin
                         nr_start <= 1'b1;
                         nr_kicked <= 1'b1;
+                        $display("RMSNorm: NR kicked time=%0t", $time);
                     end
                     if (nr_valid) begin
                         lane_idx <= 7'd0;
                         nr_kicked <= 1'b0;
                         state <= ST_NORM;
+                        $display("RMSNorm: NR valid observed time=%0t", $time);
                     end
                 end
 
@@ -231,6 +236,7 @@ module RMSNorm_Unit_IntSqrt
                     if (lane_idx == 7'd63) begin
                         done <= 1'b1;
                         state <= ST_IDLE;
+                        $display("RMSNorm: done asserted time=%0t", $time);
                     end else begin
                         lane_idx <= lane_idx + 7'd1;
                     end

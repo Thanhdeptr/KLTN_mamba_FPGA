@@ -1,7 +1,7 @@
 dataset_PTB-XL/
 mamba-venv/
 paper/
-ITMN/
+
 
 # Vivado / Xilinx generated files
 *.log
@@ -44,7 +44,7 @@ mamba-venv/
 .env
 
 # Automation scripts (generated)
-*.sh
+
 *.tcl
 *.dcp
 *.csv
