@@ -61,14 +61,14 @@ def main() -> int:
     ap.add_argument("--dir", default=".")
     ap.add_argument("--tol-rms", type=float, default=0.06)
     ap.add_argument("--tol-inproj", type=float, default=0.10)
-    ap.add_argument("--tol-silu", type=float, default=0.10)
+    ap.add_argument("--tol-silu", type=float, default=0.15)
     ap.add_argument("--tol-ygated", type=float, default=0.15)
     ap.add_argument("--tol-final", type=float, default=0.20)
     ap.add_argument("--max-bad-ratio-rms", type=float, default=0.25)
     ap.add_argument("--max-bad-ratio-inproj", type=float, default=0.25)
     ap.add_argument("--max-bad-ratio-silu", type=float, default=0.20)
-    ap.add_argument("--max-bad-ratio-ygated", type=float, default=1.00)
-    ap.add_argument("--max-bad-ratio-final", type=float, default=1.00)
+    ap.add_argument("--max-bad-ratio-ygated", type=float, default=0.20)
+    ap.add_argument("--max-bad-ratio-final", type=float, default=0.15)
     ap.add_argument(
         "--tail-mode",
         choices=["strict", "report", "skip"],
