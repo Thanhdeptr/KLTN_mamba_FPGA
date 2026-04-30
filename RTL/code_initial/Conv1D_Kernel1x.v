@@ -13,11 +13,14 @@ module Conv1D_Kernel1x #(
     parameter OUT_CHANNELS = 16,
     parameter KERNEL_SIZE = 1,
     parameter SEQ_LEN = 1000
-)(
+) (
     input clk,
     input rst_n,
-    input [IN_CHANNELS-1:0][DATA_WIDTH-1:0] x_in,  // 64 channels in
-    input [`WEIGHT_DEPTH-1:0][DATA_WIDTH-1:0] weight_mem,  // flattened weights: 64*16 = 1024
+    // Pack inputs into flat vectors for Vivado synthesis compatibility
+    // layout: x_in_flat = { x_in[IN_CHANNELS-1], ..., x_in[0] } where each item is DATA_WIDTH bits
+    input [IN_CHANNELS*DATA_WIDTH-1:0] x_in_flat,  // flattened input channels
+    // flattened weights: weight_mem_flat = { w[(OUT-1)*IN + (IN-1)], ..., w[0] }
+    input [IN_CHANNELS*OUT_CHANNELS*DATA_WIDTH-1:0] weight_mem_flat,
     input valid_in,
     output reg [OUT_CHANNELS-1:0][DATA_WIDTH-1:0] y_out,  // 16 channels out
     output reg valid_out
@@ -41,10 +44,12 @@ module Conv1D_Kernel1x #(
             // For each output channel
             for (i = 0; i < OUT_CHANNELS; i = i + 1) begin
                 sum = 0;
-                // Compute weighted sum across all input channels
+                // Compute weighted sum across all input channels (use flat slicing)
                 for (j = 0; j < IN_CHANNELS; j = j + 1) begin
-                    sum = sum + ({{16{x_in[j][DATA_WIDTH-1]}}, x_in[j]} * 
-                                 {{16{weight_mem[i*IN_CHANNELS + j][DATA_WIDTH-1]}}, weight_mem[i*IN_CHANNELS + j]});
+                    sum = sum + (
+                        {{16{ x_in_flat[j*DATA_WIDTH + DATA_WIDTH-1 ]}}, x_in_flat[j*DATA_WIDTH +: DATA_WIDTH]} *
+                        {{16{ weight_mem_flat[(i*IN_CHANNELS + j)*DATA_WIDTH + DATA_WIDTH-1 ]}}, weight_mem_flat[(i*IN_CHANNELS + j)*DATA_WIDTH +: DATA_WIDTH]}
+                    );
                 end
                 // Truncate to DATA_WIDTH (Q3.12)
                 y_out[i] <= sum[DATA_WIDTH+11:12];
