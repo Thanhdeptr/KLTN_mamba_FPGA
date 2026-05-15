@@ -1,0 +1,39 @@
+Tóm tắt phân tích TRACE / monitor (run: TRACE=1, TOKENS=1)
+
+Các file đầu vào: 
+- latency: RTL/code_AI_gen/test_Mamba_FullBranch_Chain/latency_report.csv
+- state cycles: RTL/code_AI_gen/test_Mamba_FullBranch_Chain/state_cycles.csv
+
+Các điểm chính cần chú ý:
+- RMSNorm chiếm phần lớn thời gian: 134 chu kỳ (tx_id=1).
+- Tổng latency cho token mẫu: 160 chu kỳ.
+- Conv: 8 chu kỳ (đã đo per-token bằng `conv_valid_in`).
+- Scan: 15 chu kỳ; nhưng `state_id=0` chiếm 149 chu kỳ trong `state_cycles.csv` — đây là hotspot rõ rệt.
+- Các state khác (`state_id` 1..9) đều rất nhỏ (1 chu kỳ mỗi state) — có vẻ `state_id=0` là vòng lặp chính hoặc chờ dữ liệu.
+
+Các warning / môi trường quan trọng từ log:
+- Nhiều cảnh báo timescale không đồng nhất trên các module (SiLU_Unit, Exp_Unit_PWL, ...). Không ngăn simulation nhưng lưu ý cho future wave/timing analysis.
+- Cảnh báo về environment variables affecting C compiler detected during xelab; nếu gặp lỗi C-synthesis/elab, cân nhắc chạy xelab với các switches debug.
+- `Pipeline_Monitor` đã được phân tích và biên dịch (module exists).
+
+Khuyến nghị bước tiếp theo (ngắn hạn):
+- Thêm instrumentation nhẹ trong `Scan_Core_Engine` để tách `state_id=0` thành các sub-stage (ví dụ: read addr, PE compute loop, writeback) và ghi counters nhỏ cho mỗi sub-stage.
+- Tập trung tìm candidate cut-point quanh biên của `state_id=0` (giữa read/compute và writeback) — chèn register test-only và re-run 1-token regression.
+- Sau mỗi thay đổi, chạy compare.py với golden vectors để đảm bảo functional equivalence.
+
+File CSV mẫu:
+- latency_report.csv:
+  tx_id,module,start_cycle,done_cycle,latency_cycles
+  1,RMSNorm,3,137,134
+  1,InProj,137,138,1
+  1,Conv,139,147,8
+  1,Scan,147,162,15
+  1,Total,3,163,160
+
+- state_cycles.csv:
+  tx_id,state_id,cycles
+  1,0,149
+  1,1,1
+  ...
+
+Ghi chú: Tôi có thể thêm instrumentation vào `Scan_Core_Engine` (bản sao module) và chạy lại TRACE nếu bạn đồng ý. Nếu muốn, tôi sẽ tạo branch con và thực hiện bước đó.

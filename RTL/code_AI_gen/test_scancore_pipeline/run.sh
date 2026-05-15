@@ -41,6 +41,7 @@ xvlog \
   "$RTL_DIR/Conv1D_Layer.v" \
   "$RTL_DIR/Scan_Core_Engine.v" \
   Scan_Core_Engine_instr.v \
+  Scan_Core_Engine_pipe1.v \
   "$RTL_DIR/Unified_PE.v" \
   "$RTL_DIR/Out_Projection_Unit.v" \
   Mamba_Block_Wrapper.v \

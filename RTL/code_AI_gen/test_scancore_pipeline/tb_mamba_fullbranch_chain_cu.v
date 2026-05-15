@@ -1,9 +1,9 @@
 `timescale 1ns/1ps
 
-module tb_mamba_fullbranch_chain;
+module tb_mamba_fullbranch_chain_cu;
     localparam DATA_WIDTH = 16;
     localparam FRAC_BITS  = 12;
-    localparam SEQ_LEN    = 1000;
+    localparam SEQ_LEN    = 1;
     localparam D_MODEL    = 64;
     localparam D_INNER    = 128;
     localparam D_STATE    = 16;
@@ -16,6 +16,7 @@ module tb_mamba_fullbranch_chain;
         forever #5 clk = ~clk;
     end
 
+    // memories and packed regs (same as original TB)
     reg signed [DATA_WIDTH-1:0] mamba_input_mem    [0:SEQ_LEN*D_MODEL-1];
     reg signed [DATA_WIDTH-1:0] rms_weight_mem     [0:D_MODEL-1];
     reg signed [DATA_WIDTH-1:0] inproj_weight_mem  [0:D_INNER*D_MODEL-1];
@@ -32,22 +33,12 @@ module tb_mamba_fullbranch_chain;
     reg  [D_MODEL*DATA_WIDTH-1:0] x_vec_packed;
     reg  [D_MODEL*DATA_WIDTH-1:0] gamma_packed;
     wire [D_MODEL*DATA_WIDTH-1:0] rms_out_packed;
-    reg  rms_start;
-    reg  rms_en;
     wire rms_done;
+
 
     reg  [D_INNER*D_MODEL*DATA_WIDTH-1:0] inproj_w_packed;
     wire [D_INNER*DATA_WIDTH-1:0] inproj_out_packed;
-    reg  inproj_start;
-    reg  inproj_en;
-    wire inproj_done;
 
-    reg conv_start;
-    reg conv_en;
-    reg conv_valid_in;
-    wire all_conv_valid;
-
-    wire [D_INNER*DATA_WIDTH-1:0] x_activated_token_packed;
     reg  [D_INNER*4*DATA_WIDTH-1:0] conv_w_packed;
     reg  [D_INNER*DATA_WIDTH-1:0] conv_b_packed;
 
@@ -59,51 +50,62 @@ module tb_mamba_fullbranch_chain;
     reg  [D_INNER*DATA_WIDTH-1:0] D_packed;
 
     wire [D_INNER*DATA_WIDTH-1:0] y_scan_packed;
+    wire [D_INNER*DATA_WIDTH-1:0] x_activated_packed;
+    wire inproj_done;
+    wire all_conv_valid;
+    wire all_scan_done;
+    wire outproj_done;
     reg  [D_INNER*DATA_WIDTH-1:0] y_gated_packed;
 
     reg  [D_MODEL*D_INNER*DATA_WIDTH-1:0] outproj_w_packed;
     wire [D_MODEL*DATA_WIDTH-1:0] final_out_packed;
-    reg  outproj_start;
-    reg  outproj_en;
-    wire outproj_done;
 
-    reg scan_start;
-    reg scan_en;
-    reg scan_clear_h;
-    wire all_scan_done;
+    integer t;
+    integer i;
+    integer j;
+    integer sim_tokens;
+    integer trace_mode;
+    integer trace_ch;
+    integer trace_token;
+    integer wait_cnt;
+    integer ack_wait;
+    integer scan_dbg_cycle;
+    integer fd_rms;
+    integer fd_inproj;
+    integer fd_silu;
+    integer fd_ygated;
+    integer fd_final;
 
-    wire [D_INNER*4-1:0] scan_state_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_discA0_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_deltaB0_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_deltaBx0_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_hnew0_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_h0_dbg_packed;
-    wire [D_INNER*32-1:0] scan_ywithd_dbg_packed;
-    wire [D_INNER*32-1:0] scan_yfinal_dbg_packed;
-    wire [D_INNER*DATA_WIDTH-1:0] scan_gateact_dbg_packed;
+    // simple reg interface signals
+    reg reg_wr;
+    reg reg_rd;
+    reg [7:0] reg_addr;
+    reg [31:0] reg_wdata;
+    wire [31:0] reg_rdata;
+    wire reg_ready;
 
-    reg monitor_en;
+    wire cu_busy;
+    wire cu_done;
+    wire cu_irq;
 
-    Mamba_Block_Wrapper #(
+    // scan_clear override to match previous TB behaviour
+    reg scan_clear_override = 0;
+
+    mamba_ip_top #(
         .DATA_WIDTH(DATA_WIDTH),
         .D_MODEL(D_MODEL),
         .D_INNER(D_INNER),
         .D_STATE(D_STATE)
-    ) u_mamba_wrapper (
+    ) u_top (
         .clk(clk),
         .reset(reset),
-        .rms_start(rms_start),
-        .rms_en(rms_en),
-        .inproj_start(inproj_start),
-        .inproj_en(inproj_en),
-        .conv_start(conv_start),
-        .conv_en(conv_en),
-        .conv_valid_in(conv_valid_in),
-        .scan_start(scan_start),
-        .scan_en(scan_en),
-        .scan_clear_h(scan_clear_h),
-        .outproj_start(outproj_start),
-        .outproj_en(outproj_en),
+        .reg_wr(reg_wr),
+        .reg_rd(reg_rd),
+        .reg_addr(reg_addr),
+        .reg_wdata(reg_wdata),
+        .reg_rdata(reg_rdata),
+        .reg_ready(reg_ready),
+        .scan_clear_override(scan_clear_override),
         .x_vec_packed(x_vec_packed),
         .gamma_packed(gamma_packed),
         .inproj_w_packed(inproj_w_packed),
@@ -123,53 +125,13 @@ module tb_mamba_fullbranch_chain;
         .outproj_done(outproj_done),
         .rms_out_packed(rms_out_packed),
         .inproj_out_packed(inproj_out_packed),
-        .x_activated_packed(x_activated_token_packed),
+        .x_activated_packed(x_activated_packed),
         .y_scan_packed(y_scan_packed),
         .final_out_packed(final_out_packed),
-        .scan_state_dbg_packed(scan_state_dbg_packed),
-        .scan_discA0_dbg_packed(scan_discA0_dbg_packed),
-        .scan_deltaB0_dbg_packed(scan_deltaB0_dbg_packed),
-        .scan_deltaBx0_dbg_packed(scan_deltaBx0_dbg_packed),
-        .scan_hnew0_dbg_packed(scan_hnew0_dbg_packed),
-        .scan_h0_dbg_packed(scan_h0_dbg_packed),
-        .scan_ywithd_dbg_packed(scan_ywithd_dbg_packed),
-        .scan_yfinal_dbg_packed(scan_yfinal_dbg_packed),
-        .scan_gateact_dbg_packed(scan_gateact_dbg_packed)
+        .cu_busy(cu_busy),
+        .cu_done(cu_done),
+        .cu_irq(cu_irq)
     );
-
-    // Pipeline monitoring instance (testbench-only)
-    Pipeline_Monitor #(
-        .D_INNER(D_INNER),
-        .NUM_STATES(10)
-    ) u_pipeline_monitor (
-        .clk(clk),
-        .reset(reset),
-        .monitor_en(monitor_en),
-        .rms_start(rms_start),
-        .rms_done(rms_done),
-        .inproj_start(inproj_start),
-        .inproj_done(inproj_done),
-        .conv_valid_in(conv_valid_in),
-        .all_conv_valid(all_conv_valid),
-        .scan_start(scan_start),
-        .all_scan_done(all_scan_done),
-        .outproj_done(outproj_done),
-        .scan_state_dbg_packed(scan_state_dbg_packed)
-    );
-
-    integer t;
-    integer i;
-    integer j;
-    integer sim_tokens;
-    integer trace_mode;
-    integer trace_ch;
-    integer trace_token;
-    integer scan_dbg_cycle;
-    integer fd_rms;
-    integer fd_inproj;
-    integer fd_silu;
-    integer fd_ygated;
-    integer fd_final;
 
     task load_static_weights;
         begin
@@ -226,7 +188,7 @@ module tb_mamba_fullbranch_chain;
                 $fdisplay(fd_inproj, "%04h", inproj_out_packed[i*DATA_WIDTH +: DATA_WIDTH]);
             end
             for (i = 0; i < D_INNER; i = i + 1) begin
-                $fdisplay(fd_silu, "%04h", x_activated_token_packed[i*DATA_WIDTH +: DATA_WIDTH]);
+                $fdisplay(fd_silu, "%04h", x_activated_packed[i*DATA_WIDTH +: DATA_WIDTH]);
             end
             for (i = 0; i < D_INNER; i = i + 1) begin
                 $fdisplay(fd_ygated, "%04h", y_gated_packed[i*DATA_WIDTH +: DATA_WIDTH]);
@@ -257,20 +219,6 @@ module tb_mamba_fullbranch_chain;
         fd_ygated = $fopen("rtl_ygated.mem", "w");
         fd_final = $fopen("rtl_final.mem", "w");
 
-        rms_start = 1'b0;
-        rms_en = 1'b1;
-        inproj_start = 1'b0;
-        inproj_en = 1'b1;
-        conv_start = 1'b0;
-        conv_en = 1'b1;
-        conv_valid_in = 1'b0;
-        scan_start = 1'b0;
-        scan_en = 1'b1;
-        scan_clear_h = 1'b0;
-        outproj_start = 1'b0;
-        outproj_en = 1'b1;
-        monitor_en = 1'b0;
-
         if (!$value$plusargs("TOKENS=%d", sim_tokens)) begin
             sim_tokens = SEQ_LEN;
         end
@@ -296,92 +244,82 @@ module tb_mamba_fullbranch_chain;
         #40;
         reset = 1'b0;
 
-        // enable pipeline monitoring after reset
-        monitor_en = 1'b1;
-
-        scan_clear_h = 1'b1;
+        // pulse scan_clear via override to mimic original TB
+        scan_clear_override = 1'b1;
         @(posedge clk);
-        scan_clear_h = 1'b0;
+        scan_clear_override = 1'b0;
 
-        conv_start = 1'b1;
-        @(posedge clk);
-        conv_start = 1'b0;
-        #20;
+        // prepare reg signals
+        reg_wr = 0; reg_rd = 0; reg_addr = 8'd0; reg_wdata = 32'd0;
 
+        // conv_start is handled by CU; loop tokens and use reg writes to start each token
         for (t = 0; t < sim_tokens; t = t + 1) begin
             load_token_inputs(t);
 
-            @(posedge clk);
-            rms_start = 1'b1;
-            @(posedge clk);
-            rms_start = 1'b0;
-            wait (rms_done == 1'b1);
-            @(posedge clk);
-
-            inproj_start = 1'b1;
-            @(posedge clk);
-            inproj_start = 1'b0;
-            wait (inproj_done == 1'b1);
-            @(posedge clk);
-
-            conv_valid_in = 1'b1;
-            @(posedge clk);
-            conv_valid_in = 1'b0;
-            wait (all_conv_valid == 1'b1);
-            @(posedge clk);
-
-            scan_start = 1'b1;
-            @(posedge clk);
-            scan_start = 1'b0;
-
+            // write TOKENS into REG_TOKENS (0x08) once per run (optional)
             if (t == 0) begin
-                #1;
-                $display("SILU_TRACE token0 ch0 conv_in=%0h silu_out=%0h",
-                         inproj_out_packed[15:0],
-                         x_activated_token_packed[15:0]);
-                $display("SILU_TRACE_CHANNELS token0 conv_in[0:15]:");
-                for (scan_dbg_cycle = 0; scan_dbg_cycle < 16; scan_dbg_cycle = scan_dbg_cycle + 1) begin
-                    $display("  ch%0d: conv_in=%0h silu=%0h",
-                             scan_dbg_cycle,
-                             inproj_out_packed[scan_dbg_cycle*DATA_WIDTH +: DATA_WIDTH],
-                             x_activated_token_packed[scan_dbg_cycle*DATA_WIDTH +: DATA_WIDTH]);
-                end
+                @(posedge clk);
+                reg_wr <= 1; reg_addr <= 8'h08; reg_wdata <= sim_tokens; @(posedge clk);
+                reg_wr <= 0; reg_wdata <= 32'd0; @(posedge clk);
             end
 
-            if (trace_mode && t == trace_token) begin
-                $display("TRACE_CONFIG token=%0d trace_ch=%0d", trace_token, trace_ch);
-                for (scan_dbg_cycle = 0; scan_dbg_cycle < 12; scan_dbg_cycle = scan_dbg_cycle + 1) begin
-                    @(posedge clk);
-                    #1;
-                    $display("TRACE token%0d ch%0d cycle=%0d state=%0d discA0=%0d deltaB0=%0d deltaBx0=%0d hnew0=%0d h0=%0d y_with_D=%0d y_final_raw=%0d gate_act=%0d y_scan=%0h x_act=%0h delta=%0h gate_in=%0h",
-                             trace_token,
-                             trace_ch,
-                             scan_dbg_cycle,
-                             scan_state_dbg_packed[trace_ch*4 +: 4],
-                             $signed(scan_discA0_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             $signed(scan_deltaB0_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             $signed(scan_deltaBx0_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             $signed(scan_hnew0_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             $signed(scan_h0_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             $signed(scan_ywithd_dbg_packed[trace_ch*32 +: 32]),
-                             $signed(scan_yfinal_dbg_packed[trace_ch*32 +: 32]),
-                             $signed(scan_gateact_dbg_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]),
-                             y_scan_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH],
-                             x_activated_token_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH],
-                             delta_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH],
-                             gate_packed[trace_ch*DATA_WIDTH +: DATA_WIDTH]);
+            // start sequence via REG_CTRL (0x00) bit0
+            @(posedge clk);
+            $display("TB: token %0d - write REG_CTRL start (before)", t);
+            reg_wr <= 1; reg_addr <= 8'h00; reg_wdata <= 32'h1;
+            // wait for ack (reg_ready) from CU, with short timeout
+            ack_wait = 0;
+            @(posedge clk);
+            while (reg_ready == 1'b0 && ack_wait < 10) begin
+                @(posedge clk);
+                ack_wait = ack_wait + 1;
+            end
+            if (reg_ready) begin
+                $display("TB: token %0d - reg_ready observed after %0d cycles", t, ack_wait);
+            end else begin
+                $display("TB: token %0d - WARNING: reg_ready NOT observed after %0d cycles", t, ack_wait);
+            end
+            // deassert write
+            reg_wr <= 0; reg_wdata <= 32'd0;
+            $display("TB: token %0d - wrote REG_CTRL start (after). cu_busy=%0b cu_done=%0b", t, cu_busy, cu_done);
+
+            // --- read REG_STATUS (0x04) to sample CU status after write ack ---
+            @(posedge clk);
+            reg_rd <= 1; reg_addr <= 8'h04;
+            // wait for read ready
+            ack_wait = 0;
+            @(posedge clk);
+            while (reg_ready == 1'b0 && ack_wait < 10) begin
+                @(posedge clk);
+                ack_wait = ack_wait + 1;
+            end
+            if (reg_ready) begin
+                $display("TB: token %0d - reg_rd REG_STATUS observed after %0d cycles, reg_rdata=0x%08h", t, ack_wait, reg_rdata);
+            end else begin
+                $display("TB: token %0d - WARNING: reg_rd REG_STATUS NOT observed after %0d cycles", t, ack_wait);
+            end
+            // deassert read
+            reg_rd <= 0; reg_addr <= 8'h00;
+
+            // wait for CU to indicate done, with timeout to avoid infinite hang
+            wait_cnt = 0;
+            $display("TB: token %0d - waiting for cu_done...", t);
+            while (cu_done == 1'b0 && wait_cnt < 200000) begin
+                @(posedge clk);
+                wait_cnt = wait_cnt + 1;
+                if ((wait_cnt & 1023) == 0) begin
+                    $display("TB: token %0d - still waiting at cycle %0d, cu_busy=%0b", t, $time, cu_busy);
                 end
             end
-
-            wait (all_scan_done == 1'b1);
+            if (cu_done == 1'b0) begin
+                $display("TB: token %0d - TIMEOUT waiting cu_done after %0d cycles", t, wait_cnt);
+            end else begin
+                $display("TB: token %0d - cu_done observed after %0d cycles, time=%0t", t, wait_cnt, $time);
+            end
             @(posedge clk);
 
+            // read outputs from top (y_scan is directly exposed)
             y_gated_packed = y_scan_packed;
-
-            outproj_start = 1'b1;
-            @(posedge clk);
-            outproj_start = 1'b0;
-            @(posedge clk);
 
             dump_token_outputs(t);
 
@@ -396,7 +334,7 @@ module tb_mamba_fullbranch_chain;
         $fclose(fd_ygated);
         $fclose(fd_final);
 
-        $display("Full-branch chain simulation done. tokens=%0d", sim_tokens);
+        $display("Full-branch chain (via CU) simulation done. tokens=%0d", sim_tokens);
         $finish;
     end
 

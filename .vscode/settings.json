@@ -1,0 +1,10 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "true": true,
+        "/^python3 - << 'PY'\nfrom pathlib import Path\ng = Path\\('/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/y_gated_golden\\.mem'\\)\nr = Path\\('/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/rtl_ygated\\.mem'\\)\nif not g\\.exists\\(\\) or not r\\.exists\\(\\):\n    print\\('missing', g\\.exists\\(\\), r\\.exists\\(\\)\\)\n    raise SystemExit\nG = \\[int\\(x\\.strip\\(\\),16\\) for x in g\\.read_text\\(\\)\\.splitlines\\(\\)\\]\nR = \\[int\\(x\\.strip\\(\\),16\\) for x in r\\.read_text\\(\\)\\.splitlines\\(\\)\\]\n# convert to signed 16-bit\ndef s16\\(x\\):\n    x = x & 0xffff\n    return x-0x10000 if x&0x8000 else x\nGs=\\[s16\\(x\\) for x in G\\]\nRs=\\[s16\\(x\\) for x in R\\]\nN=min\\(len\\(Gs\\),len\\(Rs\\)\\)\nneq=\\[i for i in range\\(N\\) if Gs\\[i\\]!=Rs\\[i\\]\\]\nprint\\('N_golden',len\\(Gs\\),'N_rtl',len\\(Rs\\),'N_cmp',N\\)\nprint\\('mismatches',len\\(neq\\),'percent',100\\*len\\(neq\\)/N\\)\nif neq:\n    i=neq\\[0\\]\n    print\\('first_mismatch_index',i\\)\n    lo=max\\(0,i-10\\)\n    hi=min\\(N,i\\+10\\)\n    print\\('context lines: idx,golden,rtl,delta'\\)\n    for j in range\\(lo,hi\\):\n        print\\(j, Gs\\[j\\], Rs\\[j\\], Rs\\[j\\]-Gs\\[j\\]\\)\nPY$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/tools/Xilinx/2025.1/Vivado/bin/xsim": true
+    }
+}

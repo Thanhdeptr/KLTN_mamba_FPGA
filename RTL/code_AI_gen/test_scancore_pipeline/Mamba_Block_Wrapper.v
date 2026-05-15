@@ -165,7 +165,7 @@ module Mamba_Block_Wrapper #(
             wire signed [DATA_WIDTH-1:0] gate_ch  = gate_packed[ch*DATA_WIDTH +: DATA_WIDTH];
             wire signed [D_STATE*DATA_WIDTH-1:0] A_ch = A_packed[ch*D_STATE*DATA_WIDTH +: D_STATE*DATA_WIDTH];
 
-            Scan_Core_Engine_instr u_scan (
+            Scan_Core_Engine_pipe1 u_scan (
                 .clk(clk),
                 .reset(reset),
                 .start(scan_start),
