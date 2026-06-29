@@ -1,0 +1,12 @@
+0.7
+2020.2
+May 21 2025
+22:59:56
+/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/Scan_Core_Engine_baseline_instr.v,1777810224,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/tb_scan_core_baseline.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,Scan_Core_Engine_baseline_instr,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/tb_scan_core_baseline.v,1777701379,verilog,,,,tb_scan_core_baseline,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Exp_Unit.v,1776866884,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/SiLU_Unit_PWL.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,Exp_Unit,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Exp_Unit_PWL.v,1775804921,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Exp_Unit.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,Exp_Unit_PWL,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/SiLU_Unit.v,1775529015,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Exp_Unit_PWL.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,SiLU_Unit,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/SiLU_Unit_PWL.v,1775201462,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_AI_gen/test_scancore_pipeline/Scan_Core_Engine_baseline_instr.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,SiLU_Unit_PWL,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Unified_PE.v,1777703519,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/SiLU_Unit.v,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,Unified_PE,,,,,,,,
+/home/hatthanh/schoolwork/KLTN/RTL/code_initial/_parameter.v,1768802568,verilog,,/home/hatthanh/schoolwork/KLTN/RTL/code_initial/Unified_PE.v,,,,,,,,,,

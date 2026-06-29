@@ -1,0 +1,2 @@
+abs_error_lsb=16
+abs_error_float=0.00390625

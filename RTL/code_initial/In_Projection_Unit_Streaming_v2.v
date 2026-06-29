@@ -1,5 +1,6 @@
 // In_Projection_Unit_Streaming_v2.v
 // Stream V2: 16 BRAM banks, 128 multiplies (16 lanes x 8 taps), 6-stage pipeline + BRAM latency
+// Output beat order per token: X0,Z0,X1,Z1,...,X7,Z7 (128 input beats, interleaved X/Z pairs).
 // Simulation-friendly with $readmemh for bank files located under
 // RTL/code_AI_gen/test_In_Projection_Unit/banks/weight_lane_<i>.mem
 
@@ -21,13 +22,7 @@ module In_Projection_Unit_Streaming_v2 #(
     input  wire signed [TAPS*DATA_WIDTH-1:0] x_sub_vec_in,
     output reg  signed [LANES*DATA_WIDTH-1:0] y_out, // 16 lanes x 16-bit outputs
     output reg  done_x,
-    output reg  done_z,
-    // debug outputs for lane 0
-    output reg [TAPS*DATA_WIDTH-1:0] dbg_fetch0,
-    output reg [TAPS*(DATA_WIDTH*2)-1:0] dbg_mult0,
-    output reg signed [39:0] dbg_sum0,
-    output reg signed [39:0] dbg_acc0,
-    output reg signed [DATA_WIDTH-1:0] dbg_sat0
+    output reg  done_z
 );
 
     localparam PD = BASE_PD + BRAM_LATENCY;
@@ -41,7 +36,8 @@ module In_Projection_Unit_Streaming_v2 #(
 
     // Control counters
     reg [2:0] tick_cnt; // 0..7
-    reg [3:0] group_idx; // 0..15
+    reg [3:0] group_idx; // BRAM group 0..7 X, 8..15 Z
+    reg [3:0] seq_step; // 0..15 interleaved macro-block index
     reg vld_in;
 
     // pipeline tag pipes
@@ -95,6 +91,7 @@ module In_Projection_Unit_Streaming_v2 #(
     // compilation does not error on declarations inside always blocks.
     integer addr;
     reg [TAPS*DATA_WIDTH-1:0] word;
+    reg [3:0] next_step;
 
     // initialize
     initial begin
@@ -131,6 +128,7 @@ module In_Projection_Unit_Streaming_v2 #(
         end
         tick_cnt = 0;
         group_idx = 0;
+        seq_step = 0;
         vld_in = 0;
         done_x = 0;
         done_z = 0;
@@ -139,15 +137,17 @@ module In_Projection_Unit_Streaming_v2 #(
     // Control: update counters and vld_in
     always @(posedge clk) begin
         if (!rst_n) begin
-            tick_cnt <= 0;
+            tick_cnt  <= 0;
             group_idx <= 0;
-            vld_in <= 0;
+            seq_step  <= 0;
+            vld_in    <= 0;
         end else begin
             if (!en) begin
                 // freeze counters and vld
-                tick_cnt <= tick_cnt;
+                tick_cnt  <= tick_cnt;
                 group_idx <= group_idx;
-                vld_in <= vld_in;
+                seq_step  <= seq_step;
+                vld_in    <= vld_in;
             end else begin
                 if (start) begin
                     vld_in <= 1'b1;
@@ -155,14 +155,19 @@ module In_Projection_Unit_Streaming_v2 #(
                     if (vld_in) begin
                         if (tick_cnt == TAPS-1) begin
                             tick_cnt <= 0;
-                            if (group_idx == 15) group_idx <= 0; else group_idx <= group_idx + 1;
+                            next_step = (seq_step == 4'd15) ? 4'd0 : (seq_step + 4'd1);
+                            seq_step  <= next_step;
+                            group_idx <= next_step[0]
+                                ? (4'd8 + {1'b0, next_step[3:1]})
+                                : {1'b0, next_step[3:1]};
                         end else begin
                             tick_cnt <= tick_cnt + 1;
                         end
                     end else begin
                         // first injection
-                        tick_cnt <= 0;
+                        tick_cnt  <= 0;
                         group_idx <= 0;
+                        seq_step  <= 0;
                     end
                 end else begin
                     // start not asserted -> stop accepting new
@@ -261,7 +266,9 @@ module In_Projection_Unit_Streaming_v2 #(
                     // read bram word
                     word = bram_mem[i][addr];
                     if (i == 0 && grp_idx_pipe[0] < 3) begin
+`ifndef INPROJ_CHAIN_QUIET
                         $display("FETCH grp=%0d tick=%0d addr=%0d word0=%h", grp_idx_pipe[0], tick_cnt_pipe[0], addr, word);
+`endif
                         fetch_word0 = word;
                     end
                     for (j=0;j<TAPS;j=j+1) begin
@@ -272,8 +279,6 @@ module In_Projection_Unit_Streaming_v2 #(
                         st1_x_pipe[0][i][j] <= $signed(x_sub_vec_pipe[X_LATENCY-1][j*DATA_WIDTH +: DATA_WIDTH]);
                     end
                 end
-                // update debug fetch for lane 0
-                dbg_fetch0 <= fetch_word0;
             end
 
             // Shift st0_x and st1_x through pipeline delay registers
@@ -299,12 +304,12 @@ module In_Projection_Unit_Streaming_v2 #(
                     mult_reg[i][j] <= st0_x_pipe[0][i][j] * st1_x_pipe[0][i][j];
                     // debug: print multiplication operands/result for lane 0, small groups
                     if (i == 0 && vld_pipe[0] && grp_idx_pipe[0] < 3) begin
+`ifndef INPROJ_CHAIN_QUIET
                         $display("MUL_AT grp=%0d lane=%0d tap=%0d st0=%0d st1=%0d prod=%0d", grp_idx_pipe[0], i, j, st0_x_pipe[0][i][j], st1_x_pipe[0][i][j], $signed(st0_x_pipe[0][i][j]) * $signed(st1_x_pipe[0][i][j]));
+`endif
                     end
                 end
             end
-            // update debug mult concat for lane 0
-            dbg_mult0 <= {mult_reg[0][7], mult_reg[0][6], mult_reg[0][5], mult_reg[0][4], mult_reg[0][3], mult_reg[0][2], mult_reg[0][1], mult_reg[0][0]};
         end
     end
 
@@ -332,8 +337,6 @@ module In_Projection_Unit_Streaming_v2 #(
                 // simple sum of 8 products
                 st2_sum_reg[i] <= st2_sum_wire[i];
             end
-            // debug sum for lane0
-            dbg_sum0 <= st2_sum_reg[0];
         end
     end
 
@@ -347,26 +350,23 @@ module In_Projection_Unit_Streaming_v2 #(
                     if (tick_cnt_pipe[3] == 3'd0) begin
                         acc_reg[i] <= st2_sum_reg[i];
                         acc_final_reg[i] <= st2_sum_reg[i];
-                        if (i == 0) dbg_sat0 <= sat_to_16(st2_sum_reg[0]);
                     end else begin
                         acc_reg[i] <= acc_reg[i] + st2_sum_reg[i];
                         if (tick_cnt_pipe[3] == (TAPS-1)) begin
                             acc_final_reg[i] <= acc_reg[i] + st2_sum_reg[i];
                             stage4_sat_out[i] <= sat_to_16(acc_reg[i] + st2_sum_reg[i]);
-                            if (i == 0) dbg_sat0 <= sat_to_16(acc_reg[0] + st2_sum_reg[0]);
                         end
                     end
                 end
                 if (grp_idx_pipe[3] < 3 && (tick_cnt_pipe[3] == 3'd0 || tick_cnt_pipe[3] == 3'd7)) begin
+`ifndef INPROJ_CHAIN_QUIET
                     $display("ACC grp=%0d tick=%0d sum0=%0d acc0=%0d", grp_idx_pipe[3], tick_cnt_pipe[3], st2_sum_reg[0], acc_reg[0]);
+`endif
                 end
             end
-            // debug acc for lane0
-            dbg_acc0 <= acc_reg[0];
         end
     end
 
-    // Stage4: compute scaled/saturated value for debug when tick_cnt_pipe[4]==3'd7
     function signed [DATA_WIDTH-1:0] sat_to_16;
         input signed [39:0] inv;
         reg signed [39:0] tmp;
@@ -377,12 +377,6 @@ module In_Projection_Unit_Streaming_v2 #(
             else sat_to_16 = tmp[DATA_WIDTH-1:0];
         end
     endfunction
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            dbg_sat0 <= 0;
-        end
-    end
 
     // Stage5: writeback and done pulse generation
     reg done_x_r, done_z_r;

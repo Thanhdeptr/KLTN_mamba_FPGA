@@ -1,7 +1,8 @@
 `include "_parameter.v"
 
-module Scan_Core_Engine
-(
+module Scan_Core_Engine #(
+    parameter LOAD_H_PREV = 0
+) (
     input clk,
     input reset,
     
@@ -19,9 +20,12 @@ module Scan_Core_Engine
     input signed [16 * `DATA_WIDTH - 1 : 0] A_vec,
     input signed [16 * `DATA_WIDTH - 1 : 0] B_vec,
     input signed [16 * `DATA_WIDTH - 1 : 0] C_vec,
+    input signed [16 * `DATA_WIDTH - 1 : 0] h_prev_vec,
 
     // Output
     output reg signed [`DATA_WIDTH-1:0] y_out,
+    output reg signed [`DATA_WIDTH-1:0] y_pre_out,
+    output reg signed [16 * `DATA_WIDTH - 1 : 0] h_new_out_vec,
 
     // ============================================================
     // PE ARRAY EXTERNAL
@@ -62,6 +66,7 @@ module Scan_Core_Engine
     reg signed [31:0] sum_stage1_0, sum_stage1_1, sum_stage1_2, sum_stage1_3;
     reg signed [31:0] sum_stage2_0, sum_stage2_1;
     reg signed [31:0] sum_stage3;
+    reg signed [31:0] y_pre_sum;
     (* use_dsp = "yes" *) wire signed [63:0] gated_raw_mul = $signed(y_with_D) * $signed(silu_out);
     wire signed [63:0] gated_raw_comb = gated_raw_mul >>> `FRAC_BITS;
 
@@ -98,7 +103,8 @@ module Scan_Core_Engine
     localparam S_STEP2 = 2; // Calc Delta * B
     localparam S_STEP2W = 14; // Wait for Delta*B PE output
     localparam S_STEP3 = 3; // Calc (DeltaB) * x
-    localparam S_STEP3W = 11; // Wait for Exp_Unit 2-cycle latency
+    localparam S_STEP3W  = 11; // Wait for Exp_Unit 2-cycle latency
+    localparam S_STEP3W2 = 15;
     localparam S_STEP4 = 4; // Calc discA * h_old
     localparam S_STEP5 = 5; // Calc h_new = ... + ...
     localparam S_STEP5W = 12; // Wait for PE ADD output to settle (1-cycle latency)
@@ -147,6 +153,10 @@ module Scan_Core_Engine
             if (start) begin
                 state <= S_STEP1;
                 done <= 0;
+                if (LOAD_H_PREV) begin
+                    for (j = 0; j < 16; j = j + 1)
+                        h_reg[j] <= h_prev_vec[j*`DATA_WIDTH +: `DATA_WIDTH];
+                end
             end 
             else if (en) begin 
                 case(state)
@@ -174,13 +184,8 @@ module Scan_Core_Engine
                         state <= S_STEP3W;  // Wait for Exp_Unit 2-cycle latency
                     end
                     
-                    S_STEP3W: begin
-                        // Wait for Exp_Unit pipeline (2 cycles total: in_data_r + PWL calc)
-                        // exp_in_reg loaded in S_STEP2
-                        // Cycle 1: Exp_Unit.in_data_r loads (at S_STEP3→S_STEP3W edge)
-                        // Cycle 2: Exp_Unit_PWL calculates, result written to out_data
-                        state <= S_STEP4;
-                    end
+                    S_STEP3W:  state <= S_STEP3W2;
+                    S_STEP3W2: state <= S_STEP4;
                     
                     S_STEP4: begin
                         for(j=0; j<16; j=j+1) begin
@@ -200,6 +205,7 @@ module Scan_Core_Engine
                         // Now PE ADD output is stable on pe_result_vec
                         for(j=0; j<16; j=j+1) begin
                             h_new_temp[j] <= pe_result_vec[j*16 +: 16];
+                            h_new_out_vec[j*`DATA_WIDTH +: `DATA_WIDTH] <= pe_result_vec[j*16 +: 16];
                         end
                         state <= S_STEP6;
                     end
@@ -238,11 +244,21 @@ module Scan_Core_Engine
                     end
 
                     S_STEP9: begin
-                        // Reduction stage 3 + residual add
+                        // Reduction stage 3 + residual add (Dx uses current x/D, not registered Dx_prod)
                         sum_stage3 <= $signed(sum_stage2_0) + $signed(sum_stage2_1);
                         Dx_prod <= $signed(x_val) * $signed(D_val);
-                        y_with_D <= ($signed(sum_stage2_0) + $signed(sum_stage2_1)) +
-                                    (($signed(x_val) * $signed(D_val)) >>> `FRAC_BITS);
+                        y_pre_sum = ($signed(sum_stage2_0) + $signed(sum_stage2_1)) +
+                                    ((($signed(x_val) * $signed(D_val)) +
+                                      ((($signed(x_val) * $signed(D_val)) >= 0) ?
+                                          (32'sd1 << (`FRAC_BITS-1)) :
+                                          -(32'sd1 << (`FRAC_BITS-1)))) >>> `FRAC_BITS);
+                        y_with_D <= y_pre_sum;
+                        if (y_pre_sum > 32767)
+                            y_pre_out <= 16'sh7FFF;
+                        else if (y_pre_sum < -32768)
+                            y_pre_out <= 16'sh8000;
+                        else
+                            y_pre_out <= y_pre_sum[15:0];
                         state <= S_STEP10;
                     end
 
@@ -262,23 +278,6 @@ module Scan_Core_Engine
             
             
             if (done && !start) done <= 0; 
-        end
-    end
-
-    // Debug instrumentation: state transitions and start/done edges
-    always @(posedge clk) begin
-        if (reset) begin
-            prev_state <= S_IDLE;
-            prev_start_r <= 1'b0;
-            prev_done_r <= 1'b0;
-        end else begin
-            if (state != prev_state) $display("SCAN: state %0d -> %0d time=%0t", prev_state, state, $time);
-            if (!prev_start_r && start) $display("SCAN: start asserted time=%0t", $time);
-            if (!prev_done_r && done) $display("SCAN: done asserted time=%0t", $time);
-
-            prev_state <= state;
-            prev_start_r <= start;
-            prev_done_r <= done;
         end
     end
 
@@ -306,7 +305,7 @@ module Scan_Core_Engine
                 end
             end
 
-            S_STEP3, S_STEP3W: begin
+            S_STEP3, S_STEP3W, S_STEP3W2: begin
                 pe_op_mode_out = `MODE_MUL;
                 for(j=0; j<16; j=j+1) begin
                     pe_in_a_vec[j*16 +: 16] = deltaB_stored[j];

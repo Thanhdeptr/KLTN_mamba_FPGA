@@ -1,0 +1,18 @@
+=== chain monitor N=10 ===
+lifecycle: conv_x=80 conv_z=80 pair_enq=80 beat_x=80 beat_z=80 scan_valid=80 y=1280
+queue: q_max=151 q_pop_total=160 conv_reject=0 z_solo_enq=0
+feed_done_clk=1394 y_stall_clk=-1 first_gap_tok=-1
+feed_guard: abort=0 abort_tok=-1 beatq_wait_max=0 frm_wait_max=0 tok_wait_max=0 beat_q_drop=0
+
+# tok conv_g beat_g y_g pair_g
+0 8 8 8 8
+1 8 8 8 8
+2 8 8 8 8
+3 8 8 8 8
+4 8 8 8 8
+5 8 8 8 8
+6 8 8 8 8
+7 8 8 8 8
+8 8 8 8 8
+9 8 8 8 8
+tokens_full: conv=10 beat=10 y=10 / 10

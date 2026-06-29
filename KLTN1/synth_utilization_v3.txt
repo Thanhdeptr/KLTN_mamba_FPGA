@@ -1,0 +1,30 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025
+| Date         : Fri Jun  5 16:29:50 2026
+| Host         : hatthanh-ROG-Strix-G513IE-G513IE running 64-bit Ubuntu 24.04.4 LTS
+| Command      : report_utilization -file /home/hatthanh/schoolwork/KLTN/KLTN1/synth_utilization_v3.txt -hierarchical
+| Design       : In_Projection_Unit_Streaming_v3_ooc_top
+| Device       : xck26-sfvc784-2LV-c
+| Speed File   : -2LV
+| Design State : Synthesized
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++---------------------------------------------+---------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+|                   Instance                  |              Module             | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs | RAMB36 | RAMB18 | URAM | DSP Blocks |
++---------------------------------------------+---------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+| In_Projection_Unit_Streaming_v3_ooc_top     |                           (top) |          0 |          0 |       0 |    0 | 2049 |      0 |      0 |    0 |         32 |
+|   (In_Projection_Unit_Streaming_v3_ooc_top) |                           (top) |          0 |          0 |       0 |    0 |    0 |      0 |      0 |    0 |          0 |
+|   u_core                                    | In_Projection_Unit_Streaming_v3 |          0 |          0 |       0 |    0 | 2049 |      0 |      0 |    0 |         32 |
++---------------------------------------------+---------------------------------+------------+------------+---------+------+------+--------+--------+------+------------+
+
+

@@ -1,0 +1,18 @@
+Design: In_Projection_Unit_Streaming_v3_ooc_top
+Core:   In_Projection_Unit_Streaming_v3 (debug ports removed)
+Part: xck26-sfvc784-2LV-c
+Clock constraint: 10.0 ns (100.0 MHz target)
+
+=== Utilization (post-synth OOC) ===
+DSP48: 32 / 32 target  OK
+FF:    2049
+LUT:   0 (rest of datapath pruned in OOC; mult array kept via dont_touch)
+BRAM:  0 (bram_mem not inferred in this OOC snapshot)
+
+=== Timing @ 100 MHz (sys_clk period 10 ns) ===
+WNS (setup): +0.145 ns  -> PASS (no setup violation)
+TNS (setup): 0.000 ns   -> PASS
+WHS (hold):  +3.947 ns  -> PASS
+Est. Fmax from WNS: 101.47 MHz
+
+Note: Run via KLTN1/run_synth_v3.sh. OOC top ties en/rst_n active and uses SYNTH_OOC_KEEP=1.

@@ -99,7 +99,7 @@ def extract(params, ckpt_path, input_source: str):
 
     # Module-level hooks for new blocks
     itm0 = model.layers[0]
-    hooks.append(register_io_hook(itm0.inception_block, captured_io, "layers.0.inception_block"))
+    #hooks.append(register_io_hook(itm0.inception_block, captured_io, "layers.0.inception_block"))
     hooks.append(register_io_hook(itm0.mamba_block.norm, captured_io, "layers.0.mamba_block.norm"))
     hooks.append(register_io_hook(itm0.mamba_block.mixer.in_proj, captured_io, "layers.0.mamba_block.mixer.in_proj"))
     hooks.append(register_io_hook(itm0.mamba_block.mixer.out_proj, captured_io, "layers.0.mamba_block.mixer.out_proj"))
@@ -151,23 +151,23 @@ def extract(params, ckpt_path, input_source: str):
         save_and_report(mixer.out_proj.weight.cpu().numpy(), "out_proj_weight.bin")
 
         # Inception block weights (ITM block 0)
-        inception = itm0.inception_block
-        save_and_report(inception.bottleneck.weight.cpu().numpy(), "inception_bottleneck_weight.bin")
-        save_and_report(inception.conv1.weight.cpu().numpy(), "inception_conv1_k1_weight.bin")
-        save_and_report(inception.conv2.weight.cpu().numpy(), "inception_conv2_k9_weight.bin")
-        save_and_report(inception.conv3.weight.cpu().numpy(), "inception_conv3_k19_weight.bin")
-        save_and_report(inception.conv4.weight.cpu().numpy(), "inception_conv4_k39_weight.bin")
-        save_and_report(inception.bn.weight.cpu().numpy(), "inception_bn_weight.bin")
-        save_and_report(inception.bn.bias.cpu().numpy(), "inception_bn_bias.bin")
-        save_and_report(inception.bn.running_mean.cpu().numpy(), "inception_bn_running_mean.bin")
-        save_and_report(inception.bn.running_var.cpu().numpy(), "inception_bn_running_var.bin")
+        # inception = itm0.inception_block
+        # save_and_report(inception.bottleneck.weight.cpu().numpy(), "inception_bottleneck_weight.bin")
+        # save_and_report(inception.conv1.weight.cpu().numpy(), "inception_conv1_k1_weight.bin")
+        # save_and_report(inception.conv2.weight.cpu().numpy(), "inception_conv2_k9_weight.bin")
+        # save_and_report(inception.conv3.weight.cpu().numpy(), "inception_conv3_k19_weight.bin")
+        # save_and_report(inception.conv4.weight.cpu().numpy(), "inception_conv4_k39_weight.bin")
+        # save_and_report(inception.bn.weight.cpu().numpy(), "inception_bn_weight.bin")
+        # save_and_report(inception.bn.bias.cpu().numpy(), "inception_bn_bias.bin")
+        # save_and_report(inception.bn.running_mean.cpu().numpy(), "inception_bn_running_mean.bin")
+        # save_and_report(inception.bn.running_var.cpu().numpy(), "inception_bn_running_var.bin")
 
     print("\n=== SAVE MODULE I/O GOLDEN ===")
     module_pairs = [
         ("layers.0.mamba_block.norm", "rmsnorm"),
         ("layers.0.mamba_block.mixer.in_proj", "in_proj"),
         ("layers.0.mamba_block.mixer.out_proj", "out_proj"),
-        ("layers.0.inception_block", "inception"),
+        # ("layers.0.inception_block", "inception"),
         (TARGET_LAYER_NAME, "mamba_block"),
     ]
     for key, prefix in module_pairs:

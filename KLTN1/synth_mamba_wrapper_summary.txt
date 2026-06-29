@@ -1,0 +1,2 @@
+Mamba wrapper N1_OPT (N=1 Q=16 exec=1 BRAM+flatten_none)
+WNS=0.585 LUT=73844 FF=81275 DSP=264 BRAM=3

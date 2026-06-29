@@ -53,6 +53,19 @@ def load_silu_rom(path: Path) -> np.ndarray:
     return np.array(rom, dtype=np.uint32)
 
 
+def softplus_pwl_model(x_in: int, rom: np.ndarray) -> int:
+    x = q16_to_signed(x_in)
+    addr = (x_in & 0xFFFF) >> 10
+    addr &= 0x3F
+    word = int(rom[addr])
+    slope = q16_to_signed((word >> 16) & 0xFFFF)
+    intercept = q16_to_signed(word & 0xFFFF)
+    prod = slope * x
+    if prod >= 0x80000000:
+        prod -= 0x100000000
+    return sat16((prod >> FRAC_BITS) + intercept)
+
+
 def find_one(folder: Path, suffix: str) -> Path:
     matches = sorted(folder.glob(f"*{suffix}"))
     if not matches:
@@ -147,6 +160,34 @@ def scan_scalar_golden(cpp_dir: Path, gv_dir: Path) -> np.ndarray:
     return np.array([np.float32(q16_to_signed(gated) / float(2 ** FRAC_BITS))], dtype=np.float32)
 
 
+def softplus_vector_golden(inputs: np.ndarray, root_dir: Path) -> np.ndarray:
+    rom = load_silu_rom(root_dir / "RTL" / "code_initial" / "softplus_pwl_coeffs.mem")
+    outputs: list[float] = []
+    for value in inputs:
+        value_q = float_to_q16(float(value))
+        out_q = softplus_pwl_model(value_q, rom)
+        outputs.append(np.float32(q16_to_signed(out_q) / float(2 ** FRAC_BITS)))
+    return np.array(outputs, dtype=np.float32)
+
+
+def derive_delta_before_softplus(delta_final: np.ndarray) -> np.ndarray:
+    # Inverse softplus: x = log(exp(y) - 1), with stable form.
+    y = delta_final.astype(np.float32)
+    tiny = np.float32(1e-6)
+    y = np.maximum(y, tiny)
+    x = np.where(y > 20.0, y, y + np.log1p(-np.exp(-y)))
+    return x.astype(np.float32)
+
+
+def load_delta_before_softplus(cpp_dir: Path) -> np.ndarray:
+    try:
+        return parse_tensor_txt(find_one(cpp_dir, "_Mixer_delta_before_softplus.txt"))
+    except FileNotFoundError:
+        delta_final = parse_tensor_txt(find_one(cpp_dir, "_Mixer_delta_final.txt"))
+        print("  ! Missing _Mixer_delta_before_softplus.txt, deriving from delta_final via inverse softplus")
+        return derive_delta_before_softplus(delta_final)
+
+
 def itm_block_golden(cpp_dir: Path, gv_dir: Path) -> np.ndarray:
     feat = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_input.txt"))
     conv_w = read_bin(gv_dir / "conv1d_weight.bin")
@@ -174,7 +215,7 @@ def make_scan_payload(cpp_dir: Path, gv_dir: Path) -> tuple[np.ndarray, np.ndarr
     xz = parse_tensor_txt(find_one(cpp_dir, "_X_after_linear.txt"))
 
     a_log = read_bin(gv_dir / "A_log.bin")
-    d_vec = read_bin(gv_dir / "D.bin")
+        d_vec = read_bin(gv_dir / "D.bin")  # Load the real D vector
     a_vec = -np.exp(a_log.reshape(-1, 16)[0])
 
     z_first = xz[128] if xz.size > 128 else xz[0]
@@ -187,15 +228,15 @@ def make_scan_payload(cpp_dir: Path, gv_dir: Path) -> tuple[np.ndarray, np.ndarr
 
 def extract_conv1d(cpp_dir: Path, gv_dir: Path, test_dir: Path) -> None:
     print("\n[Conv1D_Layer]")
-    x_in = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_input.txt"))
-    y_out = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_after_conv.txt"))
+    x_in = parse_tensor_txt(find_one(cpp_dir, "_Mixer_X_before_conv_silu.txt"))
+    y_out = parse_tensor_txt(find_one(cpp_dir, "_Mixer_x_activated.txt"))
     w = read_bin(gv_dir / "conv1d_weight.bin")
     b = read_bin(gv_dir / "conv1d_bias.bin")
 
-    save_mem_file(test_dir / "x_in.mem", x_in, 16)
-    save_mem_file(test_dir / "weights.mem", w, 64)
-    save_mem_file(test_dir / "bias.mem", b, 16)
-    save_mem_file(test_dir / "golden_output.mem", y_out, 16)
+    save_mem_file(test_dir / "x_in.mem", x_in, 128)
+    save_mem_file(test_dir / "conv1d_weights.mem", w, 512)
+    save_mem_file(test_dir / "conv1d_bias.mem", b, 128)
+    save_mem_file(test_dir / "golden_output.mem", y_out, 128)
 
 
 def extract_linear(cpp_dir: Path, gv_dir: Path, test_dir: Path) -> None:
@@ -214,95 +255,27 @@ def extract_linear(cpp_dir: Path, gv_dir: Path, test_dir: Path) -> None:
 def extract_scan(cpp_dir: Path, gv_dir: Path, test_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     print("\n[Scan_Core_Engine]")
     scalar, a_vec, b_vec, c_vec, y_gold = make_scan_payload(cpp_dir, gv_dir)
+    delta_before_softplus = load_delta_before_softplus(cpp_dir)
 
     save_mem_file(test_dir / "scalar_input.mem", scalar, 4)
     save_mem_file(test_dir / "A_vec.mem", a_vec, 16)
     save_mem_file(test_dir / "B_vec.mem", b_vec, 16)
     save_mem_file(test_dir / "C_vec.mem", c_vec, 16)
+    save_mem_file(test_dir / "delta_before_softplus.mem", delta_before_softplus, int(delta_before_softplus.size))
     save_mem_file(test_dir / "golden_output.mem", y_gold, 1)
     return scalar, a_vec, b_vec, c_vec, y_gold
 
 
-def extract_itm_block(cpp_dir: Path, gv_dir: Path, test_dir: Path, scan_payload: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
-    print("\n[ITM_Block]")
-    feat = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_input.txt"))
-    y_itm = itm_block_golden(cpp_dir, gv_dir)
-    w = read_bin(gv_dir / "conv1d_weight.bin")
-    b = read_bin(gv_dir / "conv1d_bias.bin")
-    scalar, a_vec, b_vec, c_vec, _ = scan_payload
+def extract_softplus(cpp_dir: Path, root_dir: Path, test_dir: Path) -> None:
+    print("\n[Softplus_Unit_PWL]")
+    delta_before_softplus = load_delta_before_softplus(cpp_dir)
+    delta_after_softplus = softplus_vector_golden(delta_before_softplus, root_dir)
 
-    save_mem_file(test_dir / "feat_in.mem", feat, 16)
-    save_mem_file(test_dir / "weights.mem", w, 64)
-    save_mem_file(test_dir / "bias.mem", b, 16)
-    save_mem_file(test_dir / "scalar_input.mem", scalar, 4)
-    save_mem_file(test_dir / "A_vec.mem", a_vec, 16)
-    save_mem_file(test_dir / "B_vec.mem", b_vec, 16)
-    save_mem_file(test_dir / "C_vec.mem", c_vec, 16)
-    save_mem_file(test_dir / "golden_output.mem", y_itm, 16)
+    save_mem_file(test_dir / "input.mem", delta_before_softplus, int(delta_before_softplus.size))
+    save_mem_file(test_dir / "golden_output.mem", delta_after_softplus, int(delta_after_softplus.size))
 
 
-def extract_mamba_top(cpp_dir: Path, gv_dir: Path, test_dir: Path, scan_payload: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
-    print("\n[Mamba_Top_ITM]")
-    feat = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_input.txt"))
-    y_top = itm_block_golden(cpp_dir, gv_dir)
-    w = read_bin(gv_dir / "conv1d_weight.bin")
-    b = read_bin(gv_dir / "conv1d_bias.bin")
-    scalar, a_vec, b_vec, c_vec, _ = scan_payload
 
-    save_mem_file(test_dir / "feat_in.mem", feat, 16)
-    save_mem_file(test_dir / "weights.mem", w, 64)
-    save_mem_file(test_dir / "bias.mem", b, 16)
-    save_mem_file(test_dir / "scalar_input.mem", scalar, 4)
-    save_mem_file(test_dir / "A_vec.mem", a_vec, 16)
-    save_mem_file(test_dir / "B_vec.mem", b_vec, 16)
-    save_mem_file(test_dir / "C_vec.mem", c_vec, 16)
-    save_mem_file(test_dir / "golden_output.mem", y_top, 16)
-
-
-def extract_new_module_vectors(cpp_dir: Path, gv_dir: Path, root_dir: Path) -> None:
-    print("\n[Full ITMN New Modules]")
-    out_root = root_dir / "RTL" / "code_AI_gen" / "test_inventory" / "full_itmn_modules"
-
-    # RMSNorm
-    rms_dir = out_root / "rmsnorm"
-    rms_in = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_input.txt"))
-    rms_out = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_after_norm.txt"))
-    rms_w = read_bin(gv_dir / "rms_norm_weight.bin")
-    save_mem_file(rms_dir / "input.mem", rms_in, 64)
-    save_mem_file(rms_dir / "weight.mem", rms_w, 64)
-    save_mem_file(rms_dir / "golden_output.mem", rms_out, 64)
-
-    # in_proj
-    in_proj_dir = out_root / "in_proj"
-    in_proj_in = parse_tensor_txt(find_one(cpp_dir, "_MambaBlock_after_norm.txt"))
-    in_proj_out = parse_tensor_txt(find_one(cpp_dir, "_X_after_linear.txt"))
-    in_proj_w1 = read_bin(gv_dir / "in_proj1_weight.bin")
-    in_proj_w2 = read_bin(gv_dir / "in_proj2_weight.bin")
-    save_mem_file(in_proj_dir / "input.mem", in_proj_in, 64)
-    save_mem_file(in_proj_dir / "weight_1.mem", in_proj_w1, int(in_proj_w1.size))
-    save_mem_file(in_proj_dir / "weight_2.mem", in_proj_w2, int(in_proj_w2.size))
-    save_mem_file(in_proj_dir / "golden_output.mem", in_proj_out, int(in_proj_out.size))
-
-    # out_proj
-    out_proj_dir = out_root / "out_proj"
-    out_proj_in = parse_tensor_txt(find_one(cpp_dir, "_Mixer_y_gated.txt"))
-    out_proj_out = parse_tensor_txt(find_one(cpp_dir, "_Mixer_final_output.txt"))
-    out_proj_w = read_bin(gv_dir / "out_proj_weight.bin")
-    save_mem_file(out_proj_dir / "input.mem", out_proj_in, 128)
-    save_mem_file(out_proj_dir / "weight.mem", out_proj_w, int(out_proj_w.size))
-    save_mem_file(out_proj_dir / "golden_output.mem", out_proj_out, 64)
-
-    # Inception block (aggregate output + per-kernel weights)
-    inc_dir = out_root / "inception_block"
-    inc_in = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_after_conv.txt"))
-    inc_out = parse_tensor_txt(find_one(cpp_dir, "_ITMBlock_inception_branch_out.txt"))
-    save_mem_file(inc_dir / "input.mem", inc_in, 64)
-    save_mem_file(inc_dir / "golden_output.mem", inc_out, 64)
-    save_mem_file(inc_dir / "bottleneck_weight.mem", read_bin(gv_dir / "inception_bottleneck_weight.bin"), int(read_bin(gv_dir / "inception_bottleneck_weight.bin").size))
-    save_mem_file(inc_dir / "conv_k1_weight.mem", read_bin(gv_dir / "inception_conv1_k1_weight.bin"), int(read_bin(gv_dir / "inception_conv1_k1_weight.bin").size))
-    save_mem_file(inc_dir / "conv_k9_weight.mem", read_bin(gv_dir / "inception_conv2_k9_weight.bin"), int(read_bin(gv_dir / "inception_conv2_k9_weight.bin").size))
-    save_mem_file(inc_dir / "conv_k19_weight.mem", read_bin(gv_dir / "inception_conv3_k19_weight.bin"), int(read_bin(gv_dir / "inception_conv3_k19_weight.bin").size))
-    save_mem_file(inc_dir / "conv_k39_weight.mem", read_bin(gv_dir / "inception_conv4_k39_weight.bin"), int(read_bin(gv_dir / "inception_conv4_k39_weight.bin").size))
 
 
 def main() -> None:
@@ -326,6 +299,7 @@ def main() -> None:
         extract_conv1d(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Conv1D_Layer")
         extract_linear(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Linear_Layer")
         scan_payload = extract_scan(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Scan_Core_Engine")
+        extract_softplus(cpp_dir, k_root, k_root / "RTL" / "code_AI_gen" / "test_Softplus_Unit_PWL")
         extract_itm_block(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_ITM_Block", scan_payload)
         extract_mamba_top(cpp_dir, gv_dir, k_root / "RTL" / "code_AI_gen" / "test_Mamba_Top_ITM", scan_payload)
         extract_new_module_vectors(cpp_dir, gv_dir, k_root)

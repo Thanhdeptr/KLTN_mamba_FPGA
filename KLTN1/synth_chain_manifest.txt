@@ -1,0 +1,4 @@
+# module|clk_ns|tag|note
+RMSNorm_Unit_IntSqrt|10.0|rmsnorm|IntSqrt RMSNorm per-token
+In_Projection_Unit_Streaming_v2|10.0|inproj_v2|16-bank BRAM, 128 MAC/tap
+Conv1D_Layer|10.0|conv1d|NUM_MAC=8 depthwise k=4 + dual SiLU

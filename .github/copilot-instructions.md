@@ -168,7 +168,6 @@ Project Architecture (KLTN ITMN FPGA Accelerator):
     Validate module correctness (P1)  | code_AI_gen/test_*/         | damtaset, paper, pre-train, venv
     Extract golden từ model           | ITMN/ + py_software/        | RTL optimize, dataset
     Baseline timing/resource          | code_AI_gen/synth_reports/  | ITMN, dataset, py_software
-    Phase 2 optimization              | code_initial/ → code_AI_gen_optimize/ | dataset, pre-train, venv
     Regression test post-optimize     | code_AI_gen/test_*/         | (re-run tests)
     SoC integration + deployment      | SOC/ + final code_initial/  | ITMN, dataset, py_software
     Debug PWL accuracy                | py_software/ + ITMN/        | code_AI_gen (chỉ high-level)

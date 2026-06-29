@@ -1,0 +1,2 @@
+# module|clk_ns|tag
+RMSNorm_Unit_IntSqrt|10.0|rmsnorm

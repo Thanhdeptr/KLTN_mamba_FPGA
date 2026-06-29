@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+ `timescale 1ns/1ps
 
 module tb_scan_core_pipe;
     reg clk, reset, start, en, clear_h;

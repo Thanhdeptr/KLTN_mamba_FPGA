@@ -23,7 +23,8 @@ module tb_scan_core_engine;
     Scan_Core_Engine dut (
         .clk(clk), .reset(reset), .start(start), .en(en), .clear_h(clear_h), .done(done),
         .delta_val(delta_val), .x_val(x_val), .D_val(D_val), .gate_val(gate_val),
-        .A_vec(A_vec), .B_vec(B_vec), .C_vec(C_vec), .y_out(y_out),
+        .A_vec(A_vec), .B_vec(B_vec), .C_vec(C_vec), .h_prev_vec(256'd0),
+        .y_out(y_out), .y_pre_out(), .h_new_out_vec(),
         .pe_op_mode_out(pe_op_mode_out), .pe_clear_acc_out(pe_clear_acc_out),
         .pe_in_a_vec(pe_in_a_vec), .pe_in_b_vec(pe_in_b_vec), .pe_result_vec(pe_result_vec)
     );

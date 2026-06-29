@@ -280,9 +280,8 @@ def main() -> None:
     write_mem(out / "B_raw.mem", b_raw)
     write_mem(out / "C_raw.mem", c_raw)
     write_mem(out / "A_vec.mem", a_vec)
-    # cpp scan_output_raw already includes residual contribution for this chain test,
-    # so keep D_vec at zero to avoid double-counting in RTL scan stage.
-    write_mem(out / "D_vec.mem", np.zeros_like(d_vec, dtype=np.float32))
+    # Keep the real residual path so RTL matches the rebuilt/PyTorch flow.
+    write_mem(out / "D_vec.mem", d_vec)
     write_mem(out / "y_gated_golden.mem", y_gated_out)
 
     write_mem(out / "outproj_weight.mem", out_w_eff)

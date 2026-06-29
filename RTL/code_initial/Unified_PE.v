@@ -37,8 +37,12 @@ module Unified_PE
     // LOGIC Combinational
 
     assign mult_raw = in_A * in_B;
-    
-    assign mult_shifted = mult_raw >>> `FRAC_BITS;
+
+    wire signed [2*`DATA_WIDTH-1:0] mul_round_bias =
+        mult_raw[2*`DATA_WIDTH-1] ? -$signed(32'sd1 << `FRAC_BITS) :
+                                     $signed(32'sd1 << `FRAC_BITS);
+
+    assign mult_shifted = (mult_raw + mul_round_bias) >>> `FRAC_BITS;
 
 
     // MUX

@@ -1,0 +1,10 @@
+timestamp_utc: 2026-06-27T09:19:46.684804+00:00
+exp_type: super
+input_source: cpp
+device: auto
+checkpoint: /home/hatthanh/schoolwork/KLTN/pre-train/PTB-XL_SUPER_ITMN_DB.pth
+checkpoint_sha256: b6949752003b77bb0488663cb8e2a641d7aa06caf5ade1a623c3c197569009f9
+torch: 2.0.0+cu118
+numpy: 1.20.0
+mamba_ssm: 1.2.1
+einops: 0.8.2

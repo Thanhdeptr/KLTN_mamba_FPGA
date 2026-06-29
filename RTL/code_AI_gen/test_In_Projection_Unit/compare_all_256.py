@@ -1,7 +1,9 @@
 import struct
 
 # Read RTL output (256 signed 16-bit hex values)
-with open('rtl_output.mem', 'r') as f:
+import os
+rtl_path = 'rtl_output_v3.mem' if os.path.exists('rtl_output_v3.mem') else 'rtl_output.mem'
+with open(rtl_path, 'r') as f:
     rtl_lines = [line.strip() for line in f.readlines()]
     rtl_values = [int(v, 16) if int(v, 16) < 0x8000 else (int(v, 16) - 0x10000) for v in rtl_lines[:256]]
 

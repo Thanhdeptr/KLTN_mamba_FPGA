@@ -26,8 +26,7 @@ module tb_in_projection_unit_stream_v2();
     // instantiate DUT
     In_Projection_Unit_Streaming_v2 dut (
         .clk(clk), .rst_n(rst_n), .en(en), .start(start),
-        .x_sub_vec_in(x_sub_vec_in), .y_out(y_out), .done_x(done_x), .done_z(done_z),
-        .dbg_fetch0(dbg_fetch0), .dbg_mult0(dbg_mult0), .dbg_sum0(dbg_sum0), .dbg_acc0(dbg_acc0), .dbg_sat0(dbg_sat0)
+        .x_sub_vec_in(x_sub_vec_in), .y_out(y_out), .done_x(done_x), .done_z(done_z)
     );
 
     // clock

@@ -1,0 +1,3 @@
+abs_error_lsb=48
+z_silu_lsb=48
+abs_error_float=0.01171875

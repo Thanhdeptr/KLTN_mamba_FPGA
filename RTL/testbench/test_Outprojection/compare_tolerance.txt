@@ -1,0 +1,2 @@
+abs_error_lsb=0
+abs_error_float=0.0

@@ -115,12 +115,15 @@ if __name__ == '__main__':
         
         # --- Mamba (mixer).forward ---
         xz = mixer.in_proj(x_norm)
-        save_tensor(xz, "X_after_linear")
+        save_tensor(xz, "XZ_after_linear")
         x_mixer, z_mixer = xz.chunk(2, dim=-1)
         
         x_mixer_transposed = x_mixer.transpose(1, 2)
+        save_tensor(x_mixer_transposed, "07a_Mixer_x_before_conv_silu")
         x_conv = mixer.conv1d(x_mixer_transposed)
         x_conv_sliced = x_conv[..., :SEQ_LEN]
+        save_tensor(x_conv_sliced, "08a_Mixer_X_before_silu_after_conv")
+
         x_activated = F.silu(x_conv_sliced)
         save_tensor(x_activated, "08_Mixer_x_activated")
         
@@ -128,7 +131,12 @@ if __name__ == '__main__':
         x_dbl = mixer.x_proj(x_act_rearranged)
         dt_raw, B_raw, C_raw = torch.split(x_dbl, [DT_RANK, D_STATE, D_STATE], dim=-1)
         
-        delta = F.softplus(mixer.dt_proj(dt_raw)).transpose(1, 2)
+        # Save delta BEFORE and AFTER softplus
+        delta_proj = mixer.dt_proj(dt_raw)
+        delta_before_softplus = delta_proj.transpose(1, 2)
+        save_tensor(delta_before_softplus, "09a_Mixer_delta_before_softplus")
+        
+        delta = F.softplus(delta_proj).transpose(1, 2)
         save_tensor(delta, "09_Mixer_delta_final")
         save_tensor(B_raw, "10_Mixer_B_raw")
         save_tensor(C_raw, "11_Mixer_C_raw")
@@ -156,9 +164,19 @@ if __name__ == '__main__':
             scan_outputs.append(scan_output_i.squeeze(-1))
         scan_output_raw = torch.stack(scan_outputs, dim=-1)
         save_tensor(scan_output_raw, "13_Mixer_scan_output_raw")
-        
-        # Gating và out_proj
-        y_gated = scan_output_raw * F.silu(z_mixer.transpose(1, 2))
+
+        # y_pre = C*h + D*x (skip connection), then gate with SiLU(z) — matches Mamba / RTL Scan
+        d_vec = mixer.D.float().view(1, -1, 1)
+        y_pre = scan_output_raw + d_vec * x_activated
+        save_tensor(y_pre, "13a_Mixer_y_pre")
+
+        # Z branch: raw inproj z (128, SEQ) and silu(z) for Conv/Scan golden
+        z_before_silu = z_mixer.transpose(1, 2)
+        z_after_silu = F.silu(z_before_silu)
+        save_tensor(z_before_silu, "Mixer_z_before_silu")
+        save_tensor(z_after_silu, "Mixer_Z_after_silu_golden")
+
+        y_gated = y_pre * z_after_silu
         save_tensor(y_gated, "14_Mixer_y_gated")
         
         mixer_output = mixer.out_proj(y_gated.transpose(1, 2))

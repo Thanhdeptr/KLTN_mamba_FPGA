@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 module tb_softplus_unit_pwl;
-    localparam integer N = 1024;
+    localparam integer N = 128000;
     reg clk;
     reg signed [15:0] in_data;
     wire signed [15:0] out_data;
